@@ -13,7 +13,7 @@ A learning platform sells monthly subscriptions. Students watch lessons from mul
 
 This project implements that **financial core** only — not the full LMS.
 
-The sections below include **locked lifecycle rules** that govern how the system is intended to evolve. The current v1 implementation ships **monthly allocation** only (`revenue:allocate --month=YYYY-MM`); daily allocation and refunds are documented policy for future work, not yet implemented in code.
+The sections below include **locked lifecycle rules** and the **implemented** feature 002 paths: **daily allocation** (official), **legacy monthly allocation**, **standard refunds**, Filament subscription visibility, and financial dashboard widgets.
 
 ## Financial lifecycle rules (locked)
 
@@ -163,15 +163,57 @@ Money is never stored as floats. Display may format `10800` → `108.00 EGP` for
 
 A student paying 30,000 for January gets 30,000 recognized in January if the subscription covers the full month.
 
-## Monthly settlement periods (v1 implementation)
+## Daily allocation (official — feature 002)
 
-Settlement is **calendar-month** based (`year`, `month`). v1 implements **monthly allocation only**.
+```
+revenue:allocate --date=2026-01-04
+```
+
+- Allocates **one completed elapsed calendar day** (rejects today and future dates)
+- Creates a `settlement_periods` row with `granularity=daily`
+- Idempotency key: `allocation:daily:{date}:{subscription}:{instructor}`
+- Engagement filtered to `DATE(consumed_at) = date`
+- `AllocationModeGuardService` blocks daily allocation if monthly allocations exist for that month
+
+## Monthly settlement periods (legacy)
 
 ```
 revenue:allocate --month=2026-01
 ```
 
-Creates or reuses a `settlement_periods` row and runs allocation for that completed month. Daily allocation is specified in the locked lifecycle rules above but not yet implemented.
+Calendar-month settlement retained for feature 001 tests and backward compatibility. **Not** the official path for refund demos. Guard blocks monthly allocation if any daily allocations exist in that month.
+
+## Standard refunds (implemented)
+
+`CreateSubscriptionRefundAction` orchestrates:
+
+1. Idempotency check (`refund:{subscription_id}:{cancellation_date}`)
+2. `EnsureElapsedDaysAllocatedAction` — daily allocation only through cancellation day inclusive
+3. `RefundCalculationService` — unused future days amount (integer minor units)
+4. Persist `refunds` row; update subscription status — **no ledger reversals**
+
+Filament entry point: **Refund Unused Days** on subscription view (`SubscriptionResource`).
+
+## Subscription financial summary
+
+`SubscriptionFinancialSummaryService` computes per-subscription metrics from MySQL:
+
+- Paid, earned, unearned, refunded, remaining refundable
+- Platform earned, instructor pool allocated, instructor paid, instructor outstanding
+
+Displayed on **Finance → Subscriptions** (read-only list/view).
+
+## Filament financial dashboard
+
+DB-backed widgets (no Redis cache for money totals):
+
+| Widget | Metrics |
+|--------|---------|
+| FinancialOverviewStats | payments, earned, unearned, refunds, remaining refundable |
+| RevenueSplitStats | platform earned, instructor allocated/paid/outstanding |
+| PayoutPipelineStats | pending, pending_confirmation, failed payout counts |
+| SubscriptionStatusStats | active vs cancelled/refunded |
+| TopInstructorsByEarned / TopInstructorsByOutstanding | top 5 tables |
 
 ## Engagement weighting: `valid_watched_seconds`
 
@@ -343,9 +385,8 @@ Read-only `InstructorBalanceResource`:
 
 ## Future improvements
 
-- **Daily allocation command** — per-day settlement with monthly mutual-exclusion guards
-- **Standard refund flow** — allocate through cancellation day, refund unused future days only
 - **Exceptional refunds / chargebacks** — append-only `earning_reversal` and `clawback` entries
+- **`revenue:allocate-range`** — convenience command for multi-day demo loops
 - **Real payout provider** — replace mock with API integration, webhooks
 - **Richer audit reporting** — export, period close workflows
 - **Multi-currency** — FX rules and per-currency balances (already per-currency rows)
@@ -355,7 +396,9 @@ Read-only `InstructorBalanceResource`:
 ## Key commands
 
 ```bash
-docker compose exec app php artisan revenue:allocate --month=2026-01
+docker compose exec app php artisan revenue:allocate --date=2026-01-04   # official daily
+docker compose exec app php artisan revenue:allocate --month=2026-01     # legacy monthly
+docker compose exec app php artisan refunds:process 1 --cancel-date=2026-01-10
 docker compose exec app php artisan payouts:run
 docker compose exec app php artisan queue:work redis --tries=3
 docker compose exec app php artisan payouts:reconcile

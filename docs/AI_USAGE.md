@@ -31,14 +31,17 @@ The following **financial and architectural rules** were explicitly chosen and v
 | **Day-based proration** | Recognize revenue by overlap days in each month |
 | **`valid_watched_seconds` weighting** | Engagement-based split within instructor pool |
 | **Excluding full LMS UI** | Scope focused on financial core correctness |
-| **Read-only Filament** | Audit visibility without UI-triggered money movement |
+| **Read-only Filament balances** | Audit visibility without payout triggers from admin UI |
+| **Daily allocation as official mode** | Elapsed-day earning; monthly legacy for feature 001 tests only |
+| **Cross-mode allocation guards** | `AllocationModeGuardService` prevents daily/monthly double allocation |
+| **Standard refunds without reversals** | Unused future days only; pre-allocate through cancellation day |
 | **Redis for queues only** | MySQL remains financial source of truth |
 
 ## Validation process
 
-- **Automated tests** (Pest) cover allocation rounding, recognition proration, ledger idempotency, payout duplicate prevention, job retries, and timeout reconciliation
+- **Automated tests** (Pest) cover daily allocation, cross-mode guards, refunds, subscription Filament screen, dashboard widgets, allocation rounding, ledger idempotency, payout duplicate prevention, job retries, and timeout reconciliation
 - **Manual review** of migration schema, enum values, and command flows
-- **End-to-end demo** via `DemoFinancialCoreSeeder` + `revenue:allocate` + `payouts:run` + Filament inspection
+- **End-to-end demo** via `DemoFinancialCoreSeeder` + daily `revenue:allocate --date` + Filament refund + `payouts:run` + dashboard review
 - **Constitution** (`.specify/memory/constitution.md`) used as governing checklist for financial behavior
 
 ## What AI did not do unsupervised
@@ -46,7 +49,8 @@ The following **financial and architectural rules** were explicitly chosen and v
 - No production credentials or real customer data were used
 - No automatic deployment or external API integration without review
 - Financial formulas were cross-checked against tests (e.g. 10800/5400/1800 demo split)
-- Out-of-scope items (refunds, real gateways, full LMS) were deliberately excluded after review
+- Out-of-scope items (exceptional refunds/chargebacks, real gateways, full LMS) were deliberately excluded after review
+- Feature 002 (daily allocation, standard refunds, subscription view, dashboard) was implemented in a second Spec Kit cycle with phase gates and 54 passing tests
 
 ## Transparency for reviewers
 

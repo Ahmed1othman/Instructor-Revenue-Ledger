@@ -116,15 +116,15 @@ description: "Task list for Daily Allocation, Refunds, and Financial Admin Visib
 
 ### Tests for US3
 
-- [ ] T031 [P] [US3] Create `tests/Feature/Filament/SubscriptionResourceTest.php`: authenticated access; list/view 200; financial fields visible; **Refund Unused Days** action present; idempotent double submit; run `InstructorBalanceResourceTest` in same gate
+- [x] T031 [P] [US3] Create `tests/Feature/Filament/SubscriptionResourceTest.php`: authenticated access; list/view 200; financial fields visible; **Refund Unused Days** action present; idempotent double submit; run `InstructorBalanceResourceTest` in same gate
 
 ### Implementation for US3
 
-- [ ] T032 [US3] Create `app/Domain/Revenue/Services/SubscriptionFinancialSummaryService.php`: compute paid, earned, unearned, refunded, remaining refundable, platform earned, instructor allocated/paid/outstanding from **daily allocation + refund lifecycle** (DB source of truth)
-- [ ] T033 [US3] Create `app/Filament/Resources/SubscriptionResource.php` with `Pages/ListSubscriptions.php` and `Pages/ViewSubscription.php`: read-only list/view; Infolist fields per FR-018; `canCreate`/`canEdit`/`canDelete` false; no payout actions
-- [ ] T034 [US3] Create `app/Filament/Resources/SubscriptionResource/Actions/RefundUnusedDaysAction.php` on view page only: label **Refund Unused Days**; cancellation date form; confirmation with preview; calls `CreateSubscriptionRefundAction`
-- [ ] T035 [US3] Complete `tests/Feature/Filament/SubscriptionResourceTest.php` — all cases green
-- [ ] T036 [US3] Run `docker compose exec app php artisan test --filter=SubscriptionResourceTest` and `InstructorBalanceResourceTest` and full suite
+- [x] T032 [US3] Create `app/Domain/Revenue/Services/SubscriptionFinancialSummaryService.php`: compute paid, earned, unearned, refunded, remaining refundable, platform earned, instructor allocated/paid/outstanding from **daily allocation + refund lifecycle** (DB source of truth)
+- [x] T033 [US3] Create `app/Filament/Resources/SubscriptionResource.php` with `Pages/ListSubscriptions.php` and `Pages/ViewSubscription.php`: read-only list/view; Infolist fields per FR-018; `canCreate`/`canEdit`/`canDelete` false; no payout actions
+- [x] T034 [US3] Create `app/Filament/Resources/SubscriptionResource/Actions/RefundUnusedDaysAction.php` on view page only: label **Refund Unused Days**; cancellation date form; confirmation with preview; calls `CreateSubscriptionRefundAction`
+- [x] T035 [US3] Complete `tests/Feature/Filament/SubscriptionResourceTest.php` — all cases green
+- [x] T036 [US3] Run `docker compose exec app php artisan test --filter=SubscriptionResourceTest` and `InstructorBalanceResourceTest` and full suite
 
 **Checkpoint**: Subscription financial screen demo-ready; instructor balance resource unchanged.
 
@@ -138,19 +138,19 @@ description: "Task list for Daily Allocation, Refunds, and Financial Admin Visib
 
 ### Tests for US4
 
-- [ ] T037 [P] [US4] Create `tests/Feature/Filament/FinancialDashboardWidgetTest.php`: spot-check payment, earned, refund, instructor allocated/paid/outstanding totals against known seed data
+- [x] T037 [P] [US4] Create `tests/Feature/Filament/FinancialDashboardWidgetTest.php`: spot-check payment, earned, refund, instructor allocated/paid/outstanding totals against known seed data
 
 ### Implementation for US4
 
-- [ ] T038 [P] [US4] Create `app/Filament/Widgets/FinancialOverviewStats.php` — total payments, earned/recognized revenue, unearned liability, total refunds (Eloquent sums, integer minor units)
-- [ ] T039 [P] [US4] Create `app/Filament/Widgets/RevenueSplitStats.php` — platform earned, instructor allocated, paid, outstanding
-- [ ] T040 [P] [US4] Create `app/Filament/Widgets/PayoutPipelineStats.php` — pending, pending_confirmation, failed payout counts
-- [ ] T041 [P] [US4] Create `app/Filament/Widgets/SubscriptionStatusStats.php` — active vs cancelled/refunded counts
-- [ ] T042 [P] [US4] Create `app/Filament/Widgets/TopInstructorsByEarned.php` — table widget top 5 by `total_earned_minor`
-- [ ] T043 [P] [US4] Create `app/Filament/Widgets/TopInstructorsByOutstanding.php` — table widget top 5 by `outstanding_minor`
-- [ ] T044 [US4] Register widgets on Filament dashboard via `app/Providers/Filament/AdminPanelProvider.php` or discovery; no Redis cache for money totals
-- [ ] T045 [US4] Complete `tests/Feature/Filament/FinancialDashboardWidgetTest.php` — all cases green
-- [ ] T046 [US4] Run `docker compose exec app php artisan test --filter=FinancialDashboardWidgetTest` and full suite
+- [x] T038 [P] [US4] Create `app/Filament/Widgets/FinancialOverviewStats.php` — total payments, earned/recognized revenue, unearned liability, total refunds (Eloquent sums, integer minor units)
+- [x] T039 [P] [US4] Create `app/Filament/Widgets/RevenueSplitStats.php` — platform earned, instructor allocated, paid, outstanding
+- [x] T040 [P] [US4] Create `app/Filament/Widgets/PayoutPipelineStats.php` — pending, pending_confirmation, failed payout counts
+- [x] T041 [P] [US4] Create `app/Filament/Widgets/SubscriptionStatusStats.php` — active vs cancelled/refunded counts
+- [x] T042 [P] [US4] Create `app/Filament/Widgets/TopInstructorsByEarned.php` — table widget top 5 by `total_earned_minor`
+- [x] T043 [P] [US4] Create `app/Filament/Widgets/TopInstructorsByOutstanding.php` — table widget top 5 by `outstanding_minor`
+- [x] T044 [US4] Register widgets on Filament dashboard via `app/Providers/Filament/AdminPanelProvider.php` or discovery; no Redis cache for money totals
+- [x] T045 [US4] Complete `tests/Feature/Filament/FinancialDashboardWidgetTest.php` — all cases green
+- [x] T046 [US4] Run `docker compose exec app php artisan test --filter=FinancialDashboardWidgetTest` and full suite
 
 **Checkpoint**: Dashboard loads; widget math matches DB.
 
@@ -162,9 +162,9 @@ description: "Task list for Daily Allocation, Refunds, and Financial Admin Visib
 
 **⚠️ CRITICAL**: Do NOT change `app/Domain/Payouts/Actions/ProcessInstructorPayoutAction.php`, payout jobs, provider classes, or provider success semantics.
 
-- [ ] T047 [P] Create optional `app/Domain/Revenue/Services/AllocationCompletenessService.php` — `unallocatedElapsedDaysInMonth($year, $month)`; log warning only (no payout block)
-- [ ] T048 Add docblock/comments to `app/Console/Commands/PayoutsRunCommand.php`: pays `outstanding_minor > 0` only; outstanding from allocation; provider success only moves paid; daily period should be fully allocated before monthly payout in official lifecycle
-- [ ] T049 Run `docker compose exec app php artisan test --filter=Payout` — **all 10 payout tests pass unchanged**
+- [x] T047 [P] Create optional `app/Domain/Revenue/Services/AllocationCompletenessService.php` — `unallocatedElapsedDaysInMonth($year, $month)`; log warning only (no payout block)
+- [x] T048 Add docblock/comments to `app/Console/Commands/PayoutsRunCommand.php`: pays `outstanding_minor > 0` only; outstanding from allocation; provider success only moves paid; daily period should be fully allocated before monthly payout in official lifecycle
+- [x] T049 Run `docker compose exec app php artisan test --filter=Payout` — **all 10 payout tests pass unchanged**
 
 **Checkpoint**: Payout safety preserved; documentation clear.
 
@@ -174,11 +174,11 @@ description: "Task list for Daily Allocation, Refunds, and Financial Admin Visib
 
 **Purpose**: Interview-ready docs; daily official path; legacy monthly note; refund policy.
 
-- [ ] T050 [P] Update `README.md`: daily `--date` official path; legacy `--month`; cross-mode guard rule; Filament subscription + refund action; dashboard; demo commands; no floats
-- [ ] T051 [P] Update `docs/ARCHITECTURE.md`: daily-only official mode; `AllocationModeGuardService`; refund cancellation-day rule; no instructor reversals for standard refunds; exceptional refunds doc-only; payout ordering unchanged
-- [ ] T052 [P] Update `docs/AI_USAGE.md` with feature 002 scope note if needed
-- [ ] T053 Update `specs/002-daily-allocation-refunds-admin/quickstart.md` to match implemented commands and daily-only refund demo (no mixed monthly/daily months)
-- [ ] T054 [P] Document in `README.md` daily allocation loop for `DemoFinancialCoreSeeder` demo (do not require seeder to auto-run 30 daily commands unless explicitly added later)
+- [x] T050 [P] Update `README.md`: daily `--date` official path; legacy `--month`; cross-mode guard rule; Filament subscription + refund action; dashboard; demo commands; no floats
+- [x] T051 [P] Update `docs/ARCHITECTURE.md`: daily-only official mode; `AllocationModeGuardService`; refund cancellation-day rule; no instructor reversals for standard refunds; exceptional refunds doc-only; payout ordering unchanged
+- [x] T052 [P] Update `docs/AI_USAGE.md` with feature 002 scope note if needed
+- [x] T053 Update `specs/002-daily-allocation-refunds-admin/quickstart.md` to match implemented commands and daily-only refund demo (no mixed monthly/daily months)
+- [x] T054 [P] Document in `README.md` daily allocation loop for `DemoFinancialCoreSeeder` demo (do not require seeder to auto-run 30 daily commands unless explicitly added later)
 
 **Checkpoint**: Docs match implementation; quickstart manually verifiable.
 
@@ -186,8 +186,8 @@ description: "Task list for Daily Allocation, Refunds, and Financial Admin Visib
 
 ## Phase 7: Final Validation
 
-- [ ] T055 Run `docker compose exec app php artisan migrate` and `docker compose exec app php artisan test` — **full suite green** (30 feature 001 + all feature 002 tests)
-- [ ] T056 Manual validation per `specs/002-daily-allocation-refunds-admin/quickstart.md`: migrate → seed → daily allocate days → Filament refund → `payouts:run` + queue worker → dashboard review
+- [x] T055 Run `docker compose exec app php artisan migrate` and `docker compose exec app php artisan test` — **full suite green** (30 feature 001 + all feature 002 tests)
+- [x] T056 Manual validation per `specs/002-daily-allocation-refunds-admin/quickstart.md`: migrate → seed → daily allocate days → Filament refund → `payouts:run` + queue worker → dashboard review
 
 **Checkpoint**: Feature 002 complete; ready for submission.
 

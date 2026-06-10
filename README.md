@@ -10,14 +10,15 @@ A Laravel 11 hiring-challenge project that models **subscription revenue recogni
 - Append-only instructor ledger with balance projections
 - Payout batching with duplicate prevention via `active_snapshot_key`
 - Mock payout provider for demo; deterministic fake provider in tests
-- Read-only Filament screen for balances, payout history, and ledger entries
+- **Daily** revenue allocation (`revenue:allocate --date`) with cross-mode guards vs legacy monthly
+- Standard **unused-days refunds** (CLI + Filament **Refund Unused Days** action)
+- Read-only Filament: instructor balances, **subscription financial view**, and **financial dashboard**
 
 ## What this project is not
 
 - Not a full LMS (no course catalog UI, video player, or heartbeat tracking)
 - Not a student dashboard
 - Not a real payment gateway or payout provider integration
-- Not daily allocation or refund flows in v1 code (documented policy only — see lifecycle rules below)
 - Not Laravel Sail — this project uses **custom Docker Compose**
 - Not event sourcing — MySQL is the financial source of truth
 
@@ -114,7 +115,7 @@ These rules define how cash, earning, allocation, payout, and refunds relate. Fu
 
 **Cash vs earned:** Students pay upfront (monthly, 3-month, or annual plans). Cash is received on day one, but revenue is **earned gradually** over the access period. Future unelapsed days are unearned.
 
-**Allocation vs payout:** Separate frequencies. The system supports **daily** allocation (one elapsed day) or **monthly** allocation (one completed month). Payout can stay **monthly** even if allocation is daily. v1 implements monthly allocation only.
+**Allocation vs payout:** Separate frequencies. **Daily allocation** (`--date`) is the official path for feature 002 demos and refunds. **Monthly allocation** (`--month`) remains for legacy compatibility and feature 001 tests. Payout stays **monthly** (`payouts:run`) even when allocation is daily.
 
 **Daily/monthly mutual exclusion:** Never allocate the same month twice — if a month has daily allocations, monthly allocation for that month is blocked, and vice versa.
 
@@ -145,11 +146,33 @@ Tests use `FakePayoutProvider` (deterministic). The demo app binds `MockPayoutPr
 
 ## Revenue allocation
 
+**Official (daily)** — one completed elapsed calendar day:
+
+```bash
+docker compose exec app php artisan revenue:allocate --date=2026-01-04
+```
+
+Defaults to yesterday when `--date` is omitted. Idempotent per day.
+
+**Legacy (monthly)** — feature 001 backward compatibility only; do not mix with daily in the same month:
+
 ```bash
 docker compose exec app php artisan revenue:allocate --month=2026-01
 ```
 
-Idempotent — running twice does not duplicate ledger entries.
+`AllocationModeGuardService` blocks daily/monthly overlap in the same calendar month.
+
+## Refunds
+
+**Filament (primary):** Finance → **Subscriptions** → view → **Refund Unused Days**
+
+**CLI (tests/demo):**
+
+```bash
+docker compose exec app php artisan refunds:process {subscription_id} --cancel-date=2026-01-10
+```
+
+Cancellation day counts as used; refund covers unused future days only. No instructor earning reversals for standard refunds.
 
 ## Running payouts
 
@@ -183,11 +206,25 @@ docker compose exec app php artisan payouts:reconcile
 
 Resolves `pending_confirmation` payouts via status check — no duplicate provider send.
 
-## Full demo flow
+## Full demo flow (feature 002 — daily allocation)
 
 ```bash
 docker compose exec app php artisan migrate:fresh --seed
-docker compose exec app php artisan revenue:allocate --month=2026-01
+```
+
+Allocate each elapsed January day (official path; use days with consumption in the seeder):
+
+```bash
+docker compose exec app php artisan revenue:allocate --date=2026-01-04
+# Repeat for other elapsed days in January as needed (e.g. 01-05 … 01-30)
+```
+
+Refund and payout:
+
+```bash
+# Optional: refund via CLI
+docker compose exec app php artisan refunds:process 1 --cancel-date=2026-01-10
+
 docker compose exec app php artisan payouts:run
 docker compose exec app php artisan queue:work redis --stop-when-empty --tries=3
 docker compose exec app php artisan test
@@ -195,7 +232,19 @@ docker compose exec app php artisan test
 
 Open Filament: **http://localhost:8080/admin**
 
-Login: `admin@demo.local` / `password` → **Finance → Instructor Balances**
+Login: `admin@demo.local` / `password`
+
+| Area | Path |
+|------|------|
+| Dashboard | Financial overview widgets |
+| Subscriptions | Finance → Subscriptions → **Refund Unused Days** |
+| Instructor balances | Finance → Instructor Balances (read-only) |
+
+**Legacy monthly demo** (feature 001 only — do not use in the same month as daily):
+
+```bash
+docker compose exec app php artisan revenue:allocate --month=2026-01
+```
 
 ## Important financial guarantees
 
@@ -213,23 +262,23 @@ Login: `admin@demo.local` / `password` → **Finance → Instructor Balances**
 - **Provider outside transactions** — external calls never hold DB locks
 - **Timeout = unknown** — no debit until status is confirmed
 
-## Known limitations / out of scope (v1 code)
+## Known limitations / out of scope
 
-- Daily allocation command and daily/monthly exclusion guards (documented, not implemented)
-- Standard refund processing (policy documented; allocate-through-cancel-day rule applies when built)
-- Exceptional refunds, chargebacks, and clawbacks (append-only ledger extension)
+- Exceptional refunds, chargebacks, and clawbacks (append-only `earning_reversal` / `clawback` — documented, not implemented)
 - Real payment gateway or payout provider
 - Multi-currency conversion
 - Tax / VAT
 - Full LMS UI, student dashboard, video player, heartbeat tracking
 - Payout triggers from Filament (read-only audit view only)
 - Role-based authorization beyond basic Filament panel access
+- Automated daily allocation loop in seeder (run `--date` per day manually or via shell loop)
 
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — design decisions and interview notes
 - [docs/AI_USAGE.md](docs/AI_USAGE.md) — AI assistance disclosure
-- [specs/001-instructor-financial-core/quickstart.md](specs/001-instructor-financial-core/quickstart.md) — validation checklist
+- [specs/002-daily-allocation-refunds-admin/quickstart.md](specs/002-daily-allocation-refunds-admin/quickstart.md) — feature 002 validation checklist
+- [specs/001-instructor-financial-core/quickstart.md](specs/001-instructor-financial-core/quickstart.md) — feature 001 baseline
 
 ## License
 
