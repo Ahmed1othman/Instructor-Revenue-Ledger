@@ -18,6 +18,8 @@ class Subscription extends Model
         'status',
         'starts_at',
         'ends_at',
+        'cancelled_at',
+        'refunded_at',
         'currency',
     ];
 
@@ -27,6 +29,8 @@ class Subscription extends Model
             'status' => SubscriptionStatus::class,
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'cancelled_at' => 'date',
+            'refunded_at' => 'datetime',
         ];
     }
 
@@ -48,5 +52,10 @@ class Subscription extends Model
     public function lessonConsumptions(): HasMany
     {
         return $this->hasMany(LessonConsumption::class);
+    }
+
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(Refund::class);
     }
 }

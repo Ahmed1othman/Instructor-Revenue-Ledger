@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Domain\Revenue\Enums\SettlementGranularity;
 use App\Domain\Revenue\Enums\SettlementPeriodStatus;
 use App\Models\SettlementPeriod;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -18,6 +19,7 @@ class SettlementPeriodFactory extends Factory
         $date = now()->startOfMonth();
 
         return [
+            'granularity' => SettlementGranularity::Monthly,
             'year' => (int) $date->year,
             'month' => (int) $date->month,
             'period_start' => $date->toDateString(),

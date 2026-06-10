@@ -32,8 +32,8 @@ return new class extends Migration
             $table->dateTime('consumed_at');
             $table->timestamps();
 
-            $table->index(['subscription_id', 'instructor_id', 'consumed_at']);
-            $table->index('consumed_at');
+            $table->index(['subscription_id', 'instructor_id', 'consumed_at'], 'lc_sub_instructor_consumed_idx');
+            $table->index('consumed_at', 'lc_consumed_at_idx');
         });
     }
 

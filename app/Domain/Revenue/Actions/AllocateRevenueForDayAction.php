@@ -7,6 +7,7 @@ use App\Domain\Ledger\Actions\UpdateInstructorBalanceProjectionAction;
 use App\Domain\Ledger\Enums\LedgerDirection;
 use App\Domain\Ledger\Enums\LedgerEntryType;
 use App\Domain\Revenue\Enums\PaymentStatus;
+use App\Domain\Revenue\Enums\SettlementGranularity;
 use App\Domain\Revenue\Enums\SettlementPeriodStatus;
 use App\Domain\Revenue\Services\AllocationModeGuardService;
 use App\Domain\Revenue\Services\RevenueAllocationService;
@@ -15,10 +16,12 @@ use App\Models\Payment;
 use App\Models\RevenueAllocation;
 use App\Models\SettlementPeriod;
 use App\Models\Subscription;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 
-class AllocateRevenueForSettlementAction
+class AllocateRevenueForDayAction
 {
     public function __construct(
         private readonly AllocationModeGuardService $modeGuard,
@@ -28,9 +31,30 @@ class AllocateRevenueForSettlementAction
         private readonly UpdateInstructorBalanceProjectionAction $updateBalance,
     ) {}
 
-    public function execute(SettlementPeriod $period): void
+    public function execute(Carbon $date): SettlementPeriod
     {
-        $this->modeGuard->assertMonthlyAllocationAllowed((int) $period->year, (int) $period->month);
+        $day = $date->copy()->startOfDay();
+
+        if ($day->greaterThanOrEqualTo(now()->startOfDay())) {
+            throw new InvalidArgumentException(
+                sprintf('Cannot allocate revenue for future or current day: %s.', $day->toDateString()),
+            );
+        }
+
+        $this->modeGuard->assertDailyAllocationAllowed($day);
+
+        $period = SettlementPeriod::query()->firstOrCreate(
+            [
+                'granularity' => SettlementGranularity::Daily,
+                'period_start' => $day->toDateString(),
+            ],
+            [
+                'year' => (int) $day->year,
+                'month' => (int) $day->month,
+                'period_end' => $day->toDateString(),
+                'status' => SettlementPeriodStatus::Open,
+            ],
+        );
 
         DB::transaction(function () use ($period): void {
             $period->update(['status' => SettlementPeriodStatus::Allocating]);
@@ -39,25 +63,27 @@ class AllocateRevenueForSettlementAction
         $payments = Payment::query()
             ->with(['subscription.plan'])
             ->where('status', PaymentStatus::Succeeded)
-            ->whereHas('subscription', function ($query) use ($period): void {
-                $query->where('starts_at', '<=', $period->period_end->endOfDay())
-                    ->where('ends_at', '>=', $period->period_start->startOfDay());
+            ->whereHas('subscription', function ($query) use ($day): void {
+                $query->where('starts_at', '<=', $day->copy()->endOfDay())
+                    ->where('ends_at', '>=', $day->copy()->startOfDay());
             })
             ->get();
 
         foreach ($payments as $payment) {
-            $this->allocatePaymentForPeriod($payment, $period);
+            $this->allocatePaymentForDay($payment, $period, $day);
         }
 
         $period->update(['status' => SettlementPeriodStatus::Allocated]);
+
+        return $period;
     }
 
-    private function allocatePaymentForPeriod(Payment $payment, SettlementPeriod $period): void
+    private function allocatePaymentForDay(Payment $payment, SettlementPeriod $period, Carbon $day): void
     {
         $subscription = $payment->subscription;
         $plan = $subscription->plan;
 
-        $earnedMinor = $this->recognitionService->earnedAmountMinor($payment, $subscription, $period);
+        $earnedMinor = $this->recognitionService->earnedAmountMinorForDay($payment, $subscription, $day);
 
         if ($earnedMinor === 0) {
             return;
@@ -72,11 +98,11 @@ class AllocateRevenueForSettlementAction
             return;
         }
 
-        $weights = $this->allocationService->engagementWeights($subscription, $period);
+        $weights = $this->allocationService->engagementWeightsForDay($subscription, $day);
 
         if ($this->allocationService->totalEngagementWeight($weights) === 0) {
             Log::info('Unallocated instructor pool — no engagement', [
-                'settlement_period_id' => $period->id,
+                'allocation_date' => $day->toDateString(),
                 'subscription_id' => $subscription->id,
                 'instructor_pool_minor' => $instructorPoolMinor,
             ]);
@@ -94,6 +120,7 @@ class AllocateRevenueForSettlementAction
             $this->persistAllocation(
                 $period,
                 $subscription,
+                $day,
                 (int) $instructorId,
                 $instructorPoolMinor,
                 $weights[(int) $instructorId],
@@ -106,6 +133,7 @@ class AllocateRevenueForSettlementAction
     private function persistAllocation(
         SettlementPeriod $period,
         Subscription $subscription,
+        Carbon $day,
         int $instructorId,
         int $instructorPoolMinor,
         int $engagementWeight,
@@ -115,6 +143,7 @@ class AllocateRevenueForSettlementAction
         DB::transaction(function () use (
             $period,
             $subscription,
+            $day,
             $instructorId,
             $instructorPoolMinor,
             $engagementWeight,
@@ -122,8 +151,8 @@ class AllocateRevenueForSettlementAction
             $currency,
         ): void {
             $allocationKey = sprintf(
-                'allocation:%d:%d:%d',
-                $period->id,
+                'allocation:daily:%s:%d:%d',
+                $day->toDateString(),
                 $subscription->id,
                 $instructorId,
             );
@@ -132,6 +161,7 @@ class AllocateRevenueForSettlementAction
                 ['idempotency_key' => $allocationKey],
                 [
                     'settlement_period_id' => $period->id,
+                    'allocation_date' => $day->toDateString(),
                     'subscription_id' => $subscription->id,
                     'instructor_id' => $instructorId,
                     'instructor_pool_minor' => $instructorPoolMinor,
@@ -142,8 +172,8 @@ class AllocateRevenueForSettlementAction
             );
 
             $ledgerKey = sprintf(
-                'ledger:earning:%d:%d:%d',
-                $period->id,
+                'ledger:earning:daily:%s:%d:%d',
+                $day->toDateString(),
                 $subscription->id,
                 $instructorId,
             );

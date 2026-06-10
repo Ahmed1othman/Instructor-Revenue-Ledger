@@ -12,6 +12,7 @@ class RevenueAllocation extends Model
 
     protected $fillable = [
         'settlement_period_id',
+        'allocation_date',
         'subscription_id',
         'instructor_id',
         'instructor_pool_minor',
@@ -24,6 +25,7 @@ class RevenueAllocation extends Model
     protected function casts(): array
     {
         return [
+            'allocation_date' => 'date',
             'instructor_pool_minor' => 'integer',
             'engagement_weight' => 'integer',
             'allocated_amount_minor' => 'integer',

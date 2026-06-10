@@ -5,7 +5,7 @@ namespace App\Domain\Revenue\Services;
 use App\Models\LessonConsumption;
 use App\Models\SettlementPeriod;
 use App\Models\Subscription;
-use Illuminate\Support\Collection;
+use Carbon\Carbon;
 
 class RevenueAllocationService
 {
@@ -24,6 +24,21 @@ class RevenueAllocationService
                 $period->period_start->startOfDay(),
                 $period->period_end->endOfDay(),
             ])
+            ->selectRaw('instructor_id, SUM(valid_watched_seconds) as total_weight')
+            ->groupBy('instructor_id')
+            ->pluck('total_weight', 'instructor_id')
+            ->map(fn ($weight): int => (int) $weight)
+            ->all();
+    }
+
+    /**
+     * @return array<int, int> instructor_id => weight (valid_watched_seconds)
+     */
+    public function engagementWeightsForDay(Subscription $subscription, Carbon $date): array
+    {
+        return LessonConsumption::query()
+            ->where('subscription_id', $subscription->id)
+            ->whereDate('consumed_at', $date->toDateString())
             ->selectRaw('instructor_id, SUM(valid_watched_seconds) as total_weight')
             ->groupBy('instructor_id')
             ->pluck('total_weight', 'instructor_id')

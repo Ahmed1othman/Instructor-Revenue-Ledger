@@ -75,3 +75,48 @@ it('recognizes lifetime revenue equal to the original payment amount', function 
 
     expect($service->lifetimeRecognizedMinor($payment, $subscription))->toBe(30000);
 });
+
+it('recognizes a uniform daily amount with remainder on the last subscription day', function (): void {
+    $service = new RevenueRecognitionService;
+    $subscription = new Subscription([
+        'starts_at' => Carbon::parse('2026-01-01')->startOfDay(),
+        'ends_at' => Carbon::parse('2026-01-30')->endOfDay(),
+    ]);
+    $payment = new Payment(['amount_minor' => 30000, 'currency' => 'USD']);
+
+    $firstDay = $service->earnedAmountMinorForDay($payment, $subscription, Carbon::parse('2026-01-01'));
+    $lastDay = $service->earnedAmountMinorForDay($payment, $subscription, Carbon::parse('2026-01-30'));
+
+    expect($firstDay)->toBe(1000);
+    expect($lastDay)->toBe(1000);
+    expect($service->isLastSubscriptionDay($subscription, Carbon::parse('2026-01-30')))->toBeTrue();
+    expect($service->isLastSubscriptionDay($subscription, Carbon::parse('2026-01-29')))->toBeFalse();
+});
+
+it('recognizes lifetime daily revenue equal to the original payment amount', function (): void {
+    $service = new RevenueRecognitionService;
+    $subscription = new Subscription([
+        'starts_at' => Carbon::parse('2026-01-15')->startOfDay(),
+        'ends_at' => Carbon::parse('2026-03-14')->endOfDay(),
+    ]);
+    $payment = new Payment(['amount_minor' => 30000, 'currency' => 'USD']);
+
+    expect($service->lifetimeDailyRecognizedMinor($payment, $subscription))->toBe(30000);
+});
+
+it('calculates unused future day refund amount after cancellation day', function (): void {
+    $service = new RevenueRecognitionService;
+    $subscription = new Subscription([
+        'starts_at' => Carbon::parse('2026-01-01')->startOfDay(),
+        'ends_at' => Carbon::parse('2026-01-30')->endOfDay(),
+    ]);
+    $payment = new Payment(['amount_minor' => 30000, 'currency' => 'USD']);
+
+    $refundAmount = $service->unusedFutureDaysAmountMinor(
+        $payment,
+        $subscription,
+        Carbon::parse('2026-01-10'),
+    );
+
+    expect($refundAmount)->toBe(20000);
+});

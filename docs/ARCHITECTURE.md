@@ -13,6 +13,137 @@ A learning platform sells monthly subscriptions. Students watch lessons from mul
 
 This project implements that **financial core** only — not the full LMS.
 
+The sections below include **locked lifecycle rules** that govern how the system is intended to evolve. The current v1 implementation ships **monthly allocation** only (`revenue:allocate --month=YYYY-MM`); daily allocation and refunds are documented policy for future work, not yet implemented in code.
+
+## Financial lifecycle rules (locked)
+
+These rules define cash collection, earning, allocation, payout, and refund behavior. They must be preserved in any future implementation.
+
+### Cash collection vs earned revenue
+
+Students pay **upfront** for monthly, 3-month, or annual subscriptions.
+
+| Concept | Meaning |
+|---------|---------|
+| **Cash received** | Payment succeeds on day one — full plan price is collected immediately |
+| **Earned revenue** | Revenue is recognized **gradually** over the subscription access period |
+| **Unearned revenue** | Future unelapsed access days — not yet earned |
+
+Payment records cash. Recognition and allocation move value into earned instructor pools only as access days elapse. Future days must never be treated as already earned.
+
+### Allocation frequency vs payout frequency
+
+Allocation frequency and payout frequency are **separate** concerns.
+
+| Mode | What it does |
+|------|----------------|
+| **Daily allocation** | Allocate revenue for one **completed elapsed** calendar day |
+| **Monthly allocation** | Allocate revenue for one **completed** settlement month |
+| **Monthly payout** | Pay instructors from allocated outstanding balances |
+
+Payout can remain **monthly** even when allocation runs **daily**. A platform may allocate daily for operational visibility but still batch payouts once per month.
+
+### Daily vs monthly allocation — mutual exclusion
+
+Daily and monthly allocation must **never overlap** for the same settlement month. This prevents the same subscription-period slice from being allocated twice.
+
+| Condition | Rule |
+|-----------|------|
+| Month has any daily allocations | **Block** monthly allocation for that month |
+| Month has a monthly allocation | **Block** daily allocation for any date inside that month |
+
+Enforcement is a hard guard — not a warning.
+
+### Allocation scope
+
+Only **elapsed / completed** access periods may be allocated.
+
+- A day is allocatable only after that calendar day has fully ended (for daily mode), or after the settlement month is complete (for monthly mode).
+- The system must **never** allocate instructor earnings for future unearned days.
+- Engagement (`valid_watched_seconds`) is evaluated only within the elapsed window being settled.
+
+### Payout ordering and cutoff
+
+**Earned / allocated ≠ paid.** These are distinct states.
+
+| State | Meaning |
+|-------|---------|
+| **Earned / allocated** | `earning_credit` ledger entry written; `outstanding_minor` increased |
+| **Paid** | Confirmed provider success; `payout_debit` written; `total_paid_minor` increased; `outstanding_minor` decreased |
+
+Rules:
+
+1. Only **allocated** outstanding balances are eligible for payout.
+2. Payout must **not** run ahead of allocation.
+3. **Monthly payout:** the target period must have **complete** allocation before payout runs.
+4. **Daily allocation path:** every day in the payout period must be allocated before paying that period.
+5. **Provider success** is the **only** event that converts outstanding to paid. Timeout, failure, or pending states do not change paid balances.
+
+### Standard refund policy
+
+Standard refunds apply only to **unused future days**.
+
+**Cancellation day rule:** the cancellation day counts as a **used / elapsed** access day. Refund calculation starts from the **next** day.
+
+**Example:**
+
+- Subscription: Jan 1 → Jan 30
+- Cancel / refund requested: Jan 10
+- **Used days:** Jan 1 through Jan 10 (inclusive)
+- **Refundable days:** Jan 11 through Jan 30
+
+**Before calculating a standard refund:**
+
+1. Allocate all **unallocated elapsed days** up to and including the cancellation day.
+2. This ensures instructor engagement on the cancellation day is counted before any refund.
+
+**Why standard refunds need no earning reversals:**
+
+- Standard refunds cover only **unused future days**.
+- Future days were **never allocated** to instructors.
+- Therefore no instructor `earning_credit` needs to be reversed for a standard refund.
+
+### Exceptional refunds and chargebacks (future extension)
+
+For cases that affect **already elapsed / allocated / paid** periods:
+
+- Goodwill refunds for used days
+- Chargebacks
+- Payment disputes
+- Fraud or manual corrections
+
+The system must **not** mutate old ledger records. Use **append-only** entries:
+
+| Situation | Ledger entry type |
+|-----------|-------------------|
+| Earnings allocated but **not yet paid** | `earning_reversal` |
+| Earnings **already paid** to instructor | `clawback` / negative adjustment |
+
+This is explicitly **out of scope** for v1 but required for a complete production system.
+
+### End-to-end lifecycle flow
+
+```
+Student pays upfront
+  → subscription active
+  → elapsed days become earned over time
+  → allocation runs (daily OR monthly) for elapsed periods only
+  → instructor earning_credit entries written
+  → instructor outstanding increases
+  → monthly payout runs only after target allocation period is complete
+  → provider success writes payout_debit
+  → instructor paid increases, outstanding decreases
+  → standard refund: allocate through cancellation day, then refund unused future days only
+```
+
+### Why this design is safe (interview summary)
+
+1. **No future unearned allocation** — instructors are never paid for days the student has not yet consumed.
+2. **Simple standard refunds** — refund only unallocated future days; no clawbacks for the common case.
+3. **No double allocation** — daily/monthly mutual exclusion blocks overlapping settlement for the same month.
+4. **No payout-before-allocation** — period cutoffs ensure outstanding balances reflect fully settled slices before money leaves.
+5. **Append-only corrections** — exceptional cases add ledger entries; history stays auditable.
+
 ## Subscription payment model
 
 - Plans have `price_minor` (integer), `currency`, `duration_days`, and `instructor_share_bps` (basis points)
@@ -32,15 +163,15 @@ Money is never stored as floats. Display may format `10800` → `108.00 EGP` for
 
 A student paying 30,000 for January gets 30,000 recognized in January if the subscription covers the full month.
 
-## Monthly settlement periods
+## Monthly settlement periods (v1 implementation)
 
-Settlement is **calendar-month** based (`year`, `month`).
+Settlement is **calendar-month** based (`year`, `month`). v1 implements **monthly allocation only**.
 
 ```
 revenue:allocate --month=2026-01
 ```
 
-Creates or reuses a `settlement_periods` row and runs allocation for that month.
+Creates or reuses a `settlement_periods` row and runs allocation for that completed month. Daily allocation is specified in the locked lifecycle rules above but not yet implemented.
 
 ## Engagement weighting: `valid_watched_seconds`
 
@@ -96,7 +227,7 @@ Demo result on 18,000 pool:
 | `idempotency_key` | Unique — duplicate inserts are no-ops |
 | `occurred_at` | Business timestamp |
 
-Corrections (e.g. future refunds) would be **new entries**, not updates.
+Standard refunds do not require earning reversals (future days were never allocated). Exceptional corrections use **new entries** (`earning_reversal`, `clawback`), never updates to existing rows.
 
 ## Instructor balances as projections
 
@@ -135,6 +266,8 @@ active_snapshot_key = NULL                                                 // te
 ```
 pending → processing → succeeded | failed | pending_confirmation
 ```
+
+Payout runs only against **allocated** outstanding balances, and only after the target allocation period is complete (see payout ordering rules above). Allocated does not mean paid — paid changes only on confirmed provider success.
 
 - `payouts:run` creates a batch and one payout per instructor with `outstanding_minor > 0`
 - `ProcessInstructorPayoutJob` calls the provider
@@ -210,7 +343,9 @@ Read-only `InstructorBalanceResource`:
 
 ## Future improvements
 
-- **Refunds and earning reversals** — debit entries with new idempotency keys
+- **Daily allocation command** — per-day settlement with monthly mutual-exclusion guards
+- **Standard refund flow** — allocate through cancellation day, refund unused future days only
+- **Exceptional refunds / chargebacks** — append-only `earning_reversal` and `clawback` entries
 - **Real payout provider** — replace mock with API integration, webhooks
 - **Richer audit reporting** — export, period close workflows
 - **Multi-currency** — FX rules and per-currency balances (already per-currency rows)

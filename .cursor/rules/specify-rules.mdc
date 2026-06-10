@@ -7,10 +7,11 @@ For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
 - Constitution: `.specify/memory/constitution.md`
-- Feature spec: `specs/001-instructor-financial-core/spec.md`
-- Implementation plan: `specs/001-instructor-financial-core/plan.md`
-- Data model: `specs/001-instructor-financial-core/data-model.md`
-- Quickstart: `specs/001-instructor-financial-core/quickstart.md`
+- Feature spec: `specs/002-daily-allocation-refunds-admin/spec.md`
+- Implementation plan: `specs/002-daily-allocation-refunds-admin/plan.md`
+- Data model: `specs/002-daily-allocation-refunds-admin/data-model.md`
+- Quickstart: `specs/002-daily-allocation-refunds-admin/quickstart.md`
+- Prior feature (001): `specs/001-instructor-financial-core/` (baseline ledger, payouts, monthly legacy)
 
 **Stack**: Laravel 11, PHP 8.3, MySQL 8, Redis (queues/cache), Filament v3, Pest, custom Docker (not Sail).
 

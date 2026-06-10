@@ -17,7 +17,7 @@ A Laravel 11 hiring-challenge project that models **subscription revenue recogni
 - Not a full LMS (no course catalog UI, video player, or heartbeat tracking)
 - Not a student dashboard
 - Not a real payment gateway or payout provider integration
-- Not refund handling (deferred / out of scope)
+- Not daily allocation or refund flows in v1 code (documented policy only — see lifecycle rules below)
 - Not Laravel Sail — this project uses **custom Docker Compose**
 - Not event sourcing — MySQL is the financial source of truth
 
@@ -108,6 +108,33 @@ After allocation for January 2026, expected instructor earnings:
 
 Instructor pool = 18,000 minor (60% of 30,000). Platform retains 12,000 minor (40%).
 
+## Financial lifecycle rules (locked)
+
+These rules define how cash, earning, allocation, payout, and refunds relate. Full detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+**Cash vs earned:** Students pay upfront (monthly, 3-month, or annual plans). Cash is received on day one, but revenue is **earned gradually** over the access period. Future unelapsed days are unearned.
+
+**Allocation vs payout:** Separate frequencies. The system supports **daily** allocation (one elapsed day) or **monthly** allocation (one completed month). Payout can stay **monthly** even if allocation is daily. v1 implements monthly allocation only.
+
+**Daily/monthly mutual exclusion:** Never allocate the same month twice — if a month has daily allocations, monthly allocation for that month is blocked, and vice versa.
+
+**Allocation scope:** Only **elapsed / completed** periods may be allocated. Never allocate future unearned days.
+
+**Earned ≠ paid:** Allocation writes `earning_credit` and increases outstanding. **Paid** changes only after **confirmed provider success** writes `payout_debit`. Payout must not run ahead of allocation; the target period must be fully allocated first.
+
+**Standard refunds:** Apply only to **unused future days**. The cancellation day counts as used; refund starts the next day. Before refunding, allocate all elapsed days through the cancellation day. Because future days were never allocated, standard refunds do **not** require instructor earning reversals.
+
+**Exceptional refunds (future):** Chargebacks, goodwill on used days, disputes — use append-only `earning_reversal` or `clawback` entries; never mutate old ledger rows.
+
+**Lifecycle flow:**
+
+```
+Pay upfront → subscription active → elapsed days earned
+→ allocate (daily or monthly, elapsed only) → earning_credit → outstanding up
+→ payout after period fully allocated → provider success → payout_debit → paid up
+→ standard refund: allocate through cancel day → refund future days only
+```
+
 ## Running tests
 
 ```bash
@@ -173,16 +200,24 @@ Login: `admin@demo.local` / `password` → **Finance → Instructor Balances**
 ## Important financial guarantees
 
 - **Integer minor units** — all stored amounts are integers; display formatting only divides for strings
+- **Cash ≠ earned** — upfront payment does not mean same-day full earning; only elapsed access is allocatable
+- **Earned / allocated ≠ paid** — outstanding increases on allocation; paid increases only on provider success
+- **No future allocation** — instructor earnings only for completed elapsed periods
+- **No daily/monthly overlap** — mutual exclusion prevents double allocation in the same month
+- **Payout after allocation** — payout cutoffs require the target period to be fully allocated first
 - **Largest Remainder Method** — allocation rounding preserves exact pool sums
-- **Append-only ledger** — corrections are new entries, not updates
+- **Append-only ledger** — exceptional corrections are new entries (`earning_reversal`, `clawback`), not updates
+- **Standard refunds without reversals** — refund unused future days only; those days were never allocated
 - **Idempotency keys** — ledger entries and payments deduplicated by unique keys
 - **`active_snapshot_key`** — prevents duplicate active payouts for the same balance snapshot (MySQL unique index)
 - **Provider outside transactions** — external calls never hold DB locks
 - **Timeout = unknown** — no debit until status is confirmed
 
-## Known limitations / out of scope
+## Known limitations / out of scope (v1 code)
 
-- Refunds and earning reversals
+- Daily allocation command and daily/monthly exclusion guards (documented, not implemented)
+- Standard refund processing (policy documented; allocate-through-cancel-day rule applies when built)
+- Exceptional refunds, chargebacks, and clawbacks (append-only ledger extension)
 - Real payment gateway or payout provider
 - Multi-currency conversion
 - Tax / VAT

@@ -14,6 +14,8 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        config(['queue.default' => 'sync']);
+
         $this->fakePayoutProvider = new FakePayoutProvider;
         $this->app->instance(PayoutProvider::class, $this->fakePayoutProvider);
     }
