@@ -167,13 +167,13 @@ description: "Task list for Instructor Financial Core implementation"
 
 **Purpose**: Demo data, documentation, end-to-end validation.
 
-- [ ] T054 [P] Create `database/seeders/DemoFinancialCoreSeeder.php` with plan, student, 3 instructors, courses, subscription/payment 30000 minor, consumptions 3600/1800/600 seconds
-- [ ] T055 [P] Register `DemoFinancialCoreSeeder` in `database/seeders/DatabaseSeeder.php`
-- [ ] T056 [P] Replace `README.md` with project overview, Docker setup, migrate/seed/test/allocation/payout/reconcile/Filament instructions per quickstart.md
-- [ ] T057 [P] Create `docs/ARCHITECTURE.md` covering assumptions, proration, `valid_watched_seconds`, Largest Remainder, ledger, idempotency, `active_snapshot_key`, timeout handling, out-of-scope
-- [ ] T058 [P] Create `docs/AI_USAGE.md` documenting AI-assisted spec/plan/tasks and human-reviewed financial decisions
-- [ ] T059 Run full Pest suite via `docker compose exec app php artisan test` and fix any failures
-- [ ] T060 Validate end-to-end flow per `specs/001-instructor-financial-core/quickstart.md` (allocate → payout → reconcile → Filament)
+- [x] T054 [P] Create `database/seeders/DemoFinancialCoreSeeder.php` with plan, student, 3 instructors, courses, subscription/payment 30000 minor, consumptions 3600/1800/600 seconds
+- [x] T055 [P] Register `DemoFinancialCoreSeeder` in `database/seeders/DatabaseSeeder.php`
+- [x] T056 [P] Replace `README.md` with project overview, Docker setup, migrate/seed/test/allocation/payout/reconcile/Filament instructions per quickstart.md
+- [x] T057 [P] Create `docs/ARCHITECTURE.md` covering assumptions, proration, `valid_watched_seconds`, Largest Remainder, ledger, idempotency, `active_snapshot_key`, timeout handling, out-of-scope
+- [x] T058 [P] Create `docs/AI_USAGE.md` documenting AI-assisted spec/plan/tasks and human-reviewed financial decisions
+- [x] T059 Run full Pest suite via `docker compose exec app php artisan test` and fix any failures
+- [x] T060 Validate end-to-end flow per `specs/001-instructor-financial-core/quickstart.md` (allocate → payout → reconcile → Filament)
 
 ---
 

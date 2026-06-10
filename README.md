@@ -1,66 +1,201 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Instructor Revenue Ledger
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A Laravel 11 hiring-challenge project that models **subscription revenue recognition**, **engagement-weighted instructor allocation**, an **append-only financial ledger**, and **safe idempotent payouts** — with a read-only Filament admin for audit visibility.
 
-## About Laravel
+## What this project is
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- A **financial core** for a multi-instructor learning platform
+- Monthly settlement and revenue allocation driven by `valid_watched_seconds`
+- Integer **minor-unit** money handling (no floats in business logic)
+- Append-only instructor ledger with balance projections
+- Payout batching with duplicate prevention via `active_snapshot_key`
+- Mock payout provider for demo; deterministic fake provider in tests
+- Read-only Filament screen for balances, payout history, and ledger entries
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## What this project is not
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- Not a full LMS (no course catalog UI, video player, or heartbeat tracking)
+- Not a student dashboard
+- Not a real payment gateway or payout provider integration
+- Not refund handling (deferred / out of scope)
+- Not Laravel Sail — this project uses **custom Docker Compose**
+- Not event sourcing — MySQL is the financial source of truth
 
-## Learning Laravel
+## Tech stack
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+| Layer | Choice |
+|-------|--------|
+| Framework | Laravel 11, PHP 8.3 |
+| Database | MySQL 8 (financial source of truth) |
+| Queue / cache | Redis (jobs and cache only — not authoritative for money) |
+| Admin UI | Filament v3 (read-only) |
+| Tests | Pest |
+| Containers | Custom Docker Compose (`app`, `nginx`, `mysql`, `redis`, `node`) |
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+## Docker setup
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+**Prerequisites:** Docker and Docker Compose.
 
-## Laravel Sponsors
+```bash
+docker compose up -d --build
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+Services:
 
-### Premium Partners
+| Service | Purpose | Host port |
+|---------|---------|-----------|
+| `nginx` | Web server | `8080` |
+| `app` | PHP / Artisan | — |
+| `mysql` | Database | `3307` |
+| `redis` | Queue & cache | `6380` |
+| `node` | Frontend assets | — |
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+## Installation
 
-## Contributing
+```bash
+docker compose up -d --build
+docker compose exec app composer install
+docker compose exec node npm install
+docker compose exec node npm run build
+cp .env.example .env
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan migrate:fresh --seed
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Environment setup
 
-## Code of Conduct
+Copy `.env.example` to `.env`. Key values (defaults work with Docker):
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+- `DB_HOST=mysql`, `DB_DATABASE=instructor_ledger`, `DB_USERNAME=instructor`, `DB_PASSWORD=secret`
+- `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`, `REDIS_HOST=redis`
+- `APP_URL=http://localhost:8080`
 
-## Security Vulnerabilities
+All `php artisan` and `composer` commands run inside the **app** container.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Migrations and seeders
+
+```bash
+docker compose exec app php artisan migrate:fresh --seed
+```
+
+Or seed demo data only:
+
+```bash
+docker compose exec app php artisan db:seed --class=DemoFinancialCoreSeeder
+```
+
+### Demo scenario
+
+The seeder creates:
+
+| Entity | Details |
+|--------|---------|
+| Admin | `admin@demo.local` / `password` (Filament login) |
+| Student | `student@demo.local` / `password` |
+| Plan | **Monthly Pro** — 30,000 minor units (300.00 EGP), 30 days, 6000 bps instructor share (60%) |
+| Subscription | January 2026 (`2026-01-01` → `2026-01-30`) |
+| Payment | 30,000 EGP succeeded |
+| Instructors | A (Laravel APIs), B (Livewire & Filament), C (Career Skills) |
+| Engagement | `valid_watched_seconds`: A=3600, B=1800, C=600 |
+
+After allocation for January 2026, expected instructor earnings:
+
+| Instructor | Minor units | Display |
+|------------|-------------|---------|
+| A | 10,800 | 108.00 EGP |
+| B | 5,400 | 54.00 EGP |
+| C | 1,800 | 18.00 EGP |
+
+Instructor pool = 18,000 minor (60% of 30,000). Platform retains 12,000 minor (40%).
+
+## Running tests
+
+```bash
+docker compose exec app php artisan test
+```
+
+Tests use `FakePayoutProvider` (deterministic). The demo app binds `MockPayoutProvider` (random outcomes) via `AppServiceProvider`.
+
+## Revenue allocation
+
+```bash
+docker compose exec app php artisan revenue:allocate --month=2026-01
+```
+
+Idempotent — running twice does not duplicate ledger entries.
+
+## Running payouts
+
+**Start a queue worker first** (separate terminal):
+
+```bash
+docker compose exec app php artisan queue:work redis --tries=3
+```
+
+Then:
+
+```bash
+docker compose exec app php artisan payouts:run
+```
+
+Or process all pending jobs once:
+
+```bash
+docker compose exec app php artisan queue:work redis --stop-when-empty --tries=3
+```
+
+`payouts:run` dispatches jobs to Redis. Without a worker, payouts stay pending.
+
+## Payout reconciliation
+
+When the mock provider returns a timeout (outcome unknown):
+
+```bash
+docker compose exec app php artisan payouts:reconcile
+```
+
+Resolves `pending_confirmation` payouts via status check — no duplicate provider send.
+
+## Full demo flow
+
+```bash
+docker compose exec app php artisan migrate:fresh --seed
+docker compose exec app php artisan revenue:allocate --month=2026-01
+docker compose exec app php artisan payouts:run
+docker compose exec app php artisan queue:work redis --stop-when-empty --tries=3
+docker compose exec app php artisan test
+```
+
+Open Filament: **http://localhost:8080/admin**
+
+Login: `admin@demo.local` / `password` → **Finance → Instructor Balances**
+
+## Important financial guarantees
+
+- **Integer minor units** — all stored amounts are integers; display formatting only divides for strings
+- **Largest Remainder Method** — allocation rounding preserves exact pool sums
+- **Append-only ledger** — corrections are new entries, not updates
+- **Idempotency keys** — ledger entries and payments deduplicated by unique keys
+- **`active_snapshot_key`** — prevents duplicate active payouts for the same balance snapshot (MySQL unique index)
+- **Provider outside transactions** — external calls never hold DB locks
+- **Timeout = unknown** — no debit until status is confirmed
+
+## Known limitations / out of scope
+
+- Refunds and earning reversals
+- Real payment gateway or payout provider
+- Multi-currency conversion
+- Tax / VAT
+- Full LMS UI, student dashboard, video player, heartbeat tracking
+- Payout triggers from Filament (read-only audit view only)
+- Role-based authorization beyond basic Filament panel access
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — design decisions and interview notes
+- [docs/AI_USAGE.md](docs/AI_USAGE.md) — AI assistance disclosure
+- [specs/001-instructor-financial-core/quickstart.md](specs/001-instructor-financial-core/quickstart.md) — validation checklist
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+MIT
