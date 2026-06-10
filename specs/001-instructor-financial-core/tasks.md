@@ -25,10 +25,10 @@ description: "Task list for Instructor Financial Core implementation"
 
 **Purpose**: Domain layout and environment prerequisites on existing Laravel 11 app.
 
-- [ ] T001 Create domain directories `app/Domain/{Money,Revenue,Ledger,Payouts}` with Actions, Services, Enums, Jobs, Contracts, Providers, DTOs subfolders per plan.md
-- [ ] T002 [P] Update `.env.example` with Redis queue/cache settings (`QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`, `REDIS_HOST=redis`) and document app-container usage in comments
-- [ ] T003 [P] Sync `specs/001-instructor-financial-core/data-model.md` payouts table with `active_snapshot_key` nullable unique index and remove application-only duplicate guard language
-- [ ] T004 [P] Create `tests/Support/RebuildsInstructorBalances.php` trait stub for ledger-derived balance reconciliation in tests
+- [x] T001 Create domain directories `app/Domain/{Money,Revenue,Ledger,Payouts}` with Actions, Services, Enums, Jobs, Contracts, Providers, DTOs subfolders per plan.md
+- [x] T002 [P] Update `.env.example` with Redis queue/cache settings (`QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`, `REDIS_HOST=redis`) and document app-container usage in comments
+- [x] T003 [P] Sync `specs/001-instructor-financial-core/data-model.md` payouts table with `active_snapshot_key` nullable unique index and remove application-only duplicate guard language
+- [x] T004 [P] Create `tests/Support/RebuildsInstructorBalances.php` trait stub for ledger-derived balance reconciliation in tests
 
 ---
 
@@ -40,44 +40,44 @@ description: "Task list for Instructor Financial Core implementation"
 
 ### Migrations
 
-- [ ] T005 Create migration `database/migrations/*_create_plans_subscriptions_payments_tables.php` for plans, subscriptions, payments with integer minor units, basis points, idempotency keys, and indexes per data-model.md
-- [ ] T006 [P] Create migration `database/migrations/*_create_instructors_courses_lesson_consumptions_tables.php` including `valid_watched_seconds`, `consumed_at`, and consumption indexes
-- [ ] T007 [P] Create migration `database/migrations/*_create_settlement_periods_revenue_allocations_tables.php` with unique settlement `(year, month)` and allocation idempotency unique key
-- [ ] T008 [P] Create migration `database/migrations/*_create_instructor_ledger_and_balances_tables.php` for append-only ledger entries and `instructor_balances` unique `(instructor_id, currency)`
-- [ ] T009 Create migration `database/migrations/*_create_payout_tables.php` for payout_batches, payouts (`balance_snapshot_hash`, nullable `active_snapshot_key` with UNIQUE index), payout_attempts per plan PATCH
+- [x] T005 Create migration `database/migrations/*_create_plans_subscriptions_payments_tables.php` for plans, subscriptions, payments with integer minor units, basis points, idempotency keys, and indexes per data-model.md
+- [x] T006 [P] Create migration `database/migrations/*_create_instructors_courses_lesson_consumptions_tables.php` including `valid_watched_seconds`, `consumed_at`, and consumption indexes
+- [x] T007 [P] Create migration `database/migrations/*_create_settlement_periods_revenue_allocations_tables.php` with unique settlement `(year, month)` and allocation idempotency unique key
+- [x] T008 [P] Create migration `database/migrations/*_create_instructor_ledger_and_balances_tables.php` for append-only ledger entries and `instructor_balances` unique `(instructor_id, currency)`
+- [x] T009 Create migration `database/migrations/*_create_payout_tables.php` for payout_batches, payouts (`balance_snapshot_hash`, nullable `active_snapshot_key` with UNIQUE index), payout_attempts per plan PATCH
 
 ### Enums
 
-- [ ] T010 [P] Create `app/Domain/Revenue/Enums/SubscriptionStatus.php`
-- [ ] T011 [P] Create `app/Domain/Revenue/Enums/PaymentStatus.php`
-- [ ] T012 [P] Create `app/Domain/Revenue/Enums/SettlementPeriodStatus.php`
-- [ ] T013 [P] Create `app/Domain/Ledger/Enums/LedgerEntryType.php` and `app/Domain/Ledger/Enums/LedgerDirection.php`
-- [ ] T014 [P] Create `app/Domain/Payouts/Enums/PayoutBatchStatus.php`, `PayoutStatus.php`, `PayoutAttemptStatus.php`, `ProviderResultStatus.php`
+- [x] T010 [P] Create `app/Domain/Revenue/Enums/SubscriptionStatus.php`
+- [x] T011 [P] Create `app/Domain/Revenue/Enums/PaymentStatus.php`
+- [x] T012 [P] Create `app/Domain/Revenue/Enums/SettlementPeriodStatus.php`
+- [x] T013 [P] Create `app/Domain/Ledger/Enums/LedgerEntryType.php` and `app/Domain/Ledger/Enums/LedgerDirection.php`
+- [x] T014 [P] Create `app/Domain/Payouts/Enums/PayoutBatchStatus.php`, `PayoutStatus.php`, `PayoutAttemptStatus.php`, `ProviderResultStatus.php`
 
 ### Eloquent models
 
-- [ ] T015 [P] Create `app/Models/Plan.php` and `app/Models/Subscription.php` with enum casts and relationships
-- [ ] T016 [P] Create `app/Models/Payment.php`, `app/Models/Instructor.php`, `app/Models/Course.php`
-- [ ] T017 [P] Create `app/Models/LessonConsumption.php` and `app/Models/SettlementPeriod.php`
-- [ ] T018 [P] Create `app/Models/RevenueAllocation.php`, `app/Models/InstructorLedgerEntry.php`, `app/Models/InstructorBalance.php`
-- [ ] T019 Create `app/Models/PayoutBatch.php`, `app/Models/Payout.php`, `app/Models/PayoutAttempt.php` with `active_snapshot_key` fillable/cast rules
+- [x] T015 [P] Create `app/Models/Plan.php` and `app/Models/Subscription.php` with enum casts and relationships
+- [x] T016 [P] Create `app/Models/Payment.php`, `app/Models/Instructor.php`, `app/Models/Course.php`
+- [x] T017 [P] Create `app/Models/LessonConsumption.php` and `app/Models/SettlementPeriod.php`
+- [x] T018 [P] Create `app/Models/RevenueAllocation.php`, `app/Models/InstructorLedgerEntry.php`, `app/Models/InstructorBalance.php`
+- [x] T019 Create `app/Models/PayoutBatch.php`, `app/Models/Payout.php`, `app/Models/PayoutAttempt.php` with `active_snapshot_key` fillable/cast rules
 
 ### Money and ledger core
 
-- [ ] T020 Create `app/Domain/Money/Money.php` value object for integer minor-unit add/subtract with currency guard
-- [ ] T021 Create `app/Domain/Ledger/Actions/RecordInstructorLedgerEntryAction.php` with idempotent insert on `idempotency_key`
-- [ ] T022 Create `app/Domain/Ledger/Actions/UpdateInstructorBalanceProjectionAction.php` using `lockForUpdate` on `instructor_balances`
-- [ ] T023 Implement balance rebuild logic in `tests/Support/RebuildsInstructorBalances.php` summing ledger entries to compare projections
+- [x] T020 Create `app/Domain/Money/Money.php` value object for integer minor-unit add/subtract with currency guard
+- [x] T021 Create `app/Domain/Ledger/Actions/RecordInstructorLedgerEntryAction.php` with idempotent insert on `idempotency_key`
+- [x] T022 Create `app/Domain/Ledger/Actions/UpdateInstructorBalanceProjectionAction.php` using `lockForUpdate` on `instructor_balances`
+- [x] T023 Implement balance rebuild logic in `tests/Support/RebuildsInstructorBalances.php` summing ledger entries to compare projections
 
 ### Factories
 
-- [ ] T024 [P] Create factories in `database/factories/` for Plan, Subscription, Payment, Instructor, Course
-- [ ] T025 [P] Create `database/factories/LessonConsumptionFactory.php` with `valid_watched_seconds` and `consumed_at`
-- [ ] T026 [P] Create factories for SettlementPeriod, RevenueAllocation, InstructorLedgerEntry, InstructorBalance
+- [x] T024 [P] Create factories in `database/factories/` for Plan, Subscription, Payment, Instructor, Course
+- [x] T025 [P] Create `database/factories/LessonConsumptionFactory.php` with `valid_watched_seconds` and `consumed_at`
+- [x] T026 [P] Create factories for SettlementPeriod, RevenueAllocation, InstructorLedgerEntry, InstructorBalance
 
 ### Foundational tests
 
-- [ ] T027 Create `tests/Feature/Ledger/LedgerAndBalanceTest.php` proving idempotent ledger insert, earning credit updates, and balance equals ledger-derived totals
+- [x] T027 Create `tests/Feature/Ledger/LedgerAndBalanceTest.php` proving idempotent ledger insert, earning credit updates, and balance equals ledger-derived totals
 
 **Checkpoint**: `docker compose exec app php artisan migrate` succeeds; T027 passes.
 
@@ -91,17 +91,17 @@ description: "Task list for Instructor Financial Core implementation"
 
 ### Tests for US1
 
-- [ ] T028 [P] [US1] Create `tests/Unit/Domain/Revenue/AllocationRoundingServiceTest.php` for 34/33/33 tie-break, pool-sum equality, and integer-only math
-- [ ] T029 [P] [US1] Create `tests/Unit/Domain/Revenue/RevenueRecognitionServiceTest.php` for full-month overlap, partial-overlap proration, and lifetime recognized sum equals `payment_amount_minor`
-- [ ] T030 [US1] Create `tests/Feature/Revenue/AllocateRevenueTest.php` for `valid_watched_seconds` weighting, no-engagement skip, allocation idempotency, and demo 10800/5400/1800 scenario
+- [x] T028 [P] [US1] Create `tests/Unit/Domain/Revenue/AllocationRoundingServiceTest.php` for 34/33/33 tie-break, pool-sum equality, and integer-only math
+- [x] T029 [P] [US1] Create `tests/Unit/Domain/Revenue/RevenueRecognitionServiceTest.php` for full-month overlap, partial-overlap proration, and lifetime recognized sum equals `payment_amount_minor`
+- [x] T030 [US1] Create `tests/Feature/Revenue/AllocateRevenueTest.php` for `valid_watched_seconds` weighting, no-engagement skip, allocation idempotency, and demo 10800/5400/1800 scenario
 
 ### Implementation for US1
 
-- [ ] T031 [P] [US1] Create `app/Domain/Revenue/Services/AllocationRoundingService.php` implementing Largest Remainder Method per plan.md
-- [ ] T032 [P] [US1] Create `app/Domain/Revenue/Services/RevenueRecognitionService.php` with day-overlap proration and last-period remainder rule
-- [ ] T033 [US1] Create `app/Domain/Revenue/Services/RevenueAllocationService.php` grouping by subscription/instructor, summing `valid_watched_seconds`, skipping zero weight
-- [ ] T034 [US1] Create `app/Domain/Revenue/Actions/AllocateRevenueForSettlementAction.php` orchestrating recognition, pool split, allocation, ledger credits, balance updates
-- [ ] T035 [US1] Create `app/Console/Commands/RevenueAllocateCommand.php` (`revenue:allocate --month=YYYY-MM`) resolving calendar-month settlement period
+- [x] T031 [P] [US1] Create `app/Domain/Revenue/Services/AllocationRoundingService.php` implementing Largest Remainder Method per plan.md
+- [x] T032 [P] [US1] Create `app/Domain/Revenue/Services/RevenueRecognitionService.php` with day-overlap proration and last-period remainder rule
+- [x] T033 [US1] Create `app/Domain/Revenue/Services/RevenueAllocationService.php` grouping by subscription/instructor, summing `valid_watched_seconds`, skipping zero weight
+- [x] T034 [US1] Create `app/Domain/Revenue/Actions/AllocateRevenueForSettlementAction.php` orchestrating recognition, pool split, allocation, ledger credits, balance updates
+- [x] T035 [US1] Create `app/Console/Commands/RevenueAllocateCommand.php` (`revenue:allocate --month=YYYY-MM`) resolving calendar-month settlement period
 
 **Checkpoint**: T028–T030 pass; manual `docker compose exec app php artisan revenue:allocate --month=2026-01` works with seeded data.
 
@@ -115,29 +115,29 @@ description: "Task list for Instructor Financial Core implementation"
 
 ### Tests for US2
 
-- [ ] T036 [P] [US2] Create `tests/Feature/Payouts/PayoutCommandTest.php` for duplicate command prevention via `active_snapshot_key` and no double debit
-- [ ] T037 [P] [US2] Create `tests/Feature/Payouts/PayoutJobRetryTest.php` for retried job safety and no re-send when succeeded/pending_confirmation
-- [ ] T038 [US2] Create `tests/Feature/Payouts/PayoutTimeoutReconcileTest.php` for timeout without debit, no provider re-send, reconcile success/failure paths
+- [x] T036 [P] [US2] Create `tests/Feature/Payouts/PayoutCommandTest.php` for duplicate command prevention via `active_snapshot_key` and no double debit
+- [x] T037 [P] [US2] Create `tests/Feature/Payouts/PayoutJobRetryTest.php` for retried job safety and no re-send when succeeded/pending_confirmation
+- [x] T038 [US2] Create `tests/Feature/Payouts/PayoutTimeoutReconcileTest.php` for timeout without debit, no provider re-send, reconcile success/failure paths
 
 ### Payout provider and DTOs
 
-- [ ] T039 [P] [US2] Create `app/Domain/Payouts/Contracts/PayoutProvider.php` and `app/Domain/Payouts/DTOs/PayoutProviderResult.php` per contracts/payout-provider.md
-- [ ] T040 [P] [US2] Create `app/Domain/Payouts/Providers/FakePayoutProvider.php` with deterministic configurable outcomes for tests
-- [ ] T041 [US2] Create `app/Domain/Payouts/Providers/MockPayoutProvider.php` with random success/failure/timeout_unknown for demo
+- [x] T039 [P] [US2] Create `app/Domain/Payouts/Contracts/PayoutProvider.php` and `app/Domain/Payouts/DTOs/PayoutProviderResult.php` per contracts/payout-provider.md
+- [x] T040 [P] [US2] Create `app/Domain/Payouts/Providers/FakePayoutProvider.php` with deterministic configurable outcomes for tests
+- [x] T041 [US2] Create `app/Domain/Payouts/Providers/MockPayoutProvider.php` with random success/failure/timeout_unknown for demo
 
 ### Payout actions
 
-- [ ] T042 [US2] Create `app/Domain/Payouts/Actions/CreatePayoutBatchAction.php` and `app/Domain/Payouts/Actions/CreateInstructorPayoutAction.php` computing `balance_snapshot_hash` and setting `active_snapshot_key`
-- [ ] T043 [P] [US2] Create `app/Domain/Payouts/Actions/MarkPayoutSucceededAction.php`, `MarkPayoutFailedAction.php`, `MarkPayoutPendingConfirmationAction.php` clearing `active_snapshot_key` only on terminal success/failure
-- [ ] T044 [US2] Create `app/Domain/Payouts/Actions/ProcessInstructorPayoutAction.php` with status gate, provider call outside transaction, persist in new transaction
-- [ ] T045 [US2] Create `app/Domain/Payouts/Actions/CheckPayoutStatusAction.php` resolving `pending_confirmation` without re-send
+- [x] T042 [US2] Create `app/Domain/Payouts/Actions/CreatePayoutBatchAction.php` and `app/Domain/Payouts/Actions/CreateInstructorPayoutAction.php` computing `balance_snapshot_hash` and setting `active_snapshot_key`
+- [x] T043 [P] [US2] Create `app/Domain/Payouts/Actions/MarkPayoutSucceededAction.php`, `MarkPayoutFailedAction.php`, `MarkPayoutPendingConfirmationAction.php` clearing `active_snapshot_key` only on terminal success/failure
+- [x] T044 [US2] Create `app/Domain/Payouts/Actions/ProcessInstructorPayoutAction.php` with status gate, provider call outside transaction, persist in new transaction
+- [x] T045 [US2] Create `app/Domain/Payouts/Actions/CheckPayoutStatusAction.php` resolving `pending_confirmation` without re-send
 
 ### Jobs and commands
 
-- [ ] T046 [P] [US2] Create `app/Domain/Payouts/Jobs/ProcessInstructorPayoutJob.php` dispatching `ProcessInstructorPayoutAction`
-- [ ] T047 [P] [US2] Create `app/Domain/Payouts/Jobs/CheckPayoutStatusJob.php` dispatching `CheckPayoutStatusAction`
-- [ ] T048 [US2] Create `app/Console/Commands/PayoutsRunCommand.php` (`payouts:run`) and `app/Console/Commands/PayoutsReconcileCommand.php` (`payouts:reconcile`)
-- [ ] T049 [US2] Bind `PayoutProvider` to `MockPayoutProvider` in `app/Providers/AppServiceProvider.php` and `FakePayoutProvider` in `tests/TestCase.php`
+- [x] T046 [P] [US2] Create `app/Domain/Payouts/Jobs/ProcessInstructorPayoutJob.php` dispatching `ProcessInstructorPayoutAction`
+- [x] T047 [P] [US2] Create `app/Domain/Payouts/Jobs/CheckPayoutStatusJob.php` dispatching `CheckPayoutStatusAction`
+- [x] T048 [US2] Create `app/Console/Commands/PayoutsRunCommand.php` (`payouts:run`) and `app/Console/Commands/PayoutsReconcileCommand.php` (`payouts:reconcile`)
+- [x] T049 [US2] Bind `PayoutProvider` to `MockPayoutProvider` in `app/Providers/AppServiceProvider.php` and `FakePayoutProvider` in `tests/TestCase.php`
 
 **Checkpoint**: T036–T038 pass; payout command + queue worker + reconcile flow verified.
 
