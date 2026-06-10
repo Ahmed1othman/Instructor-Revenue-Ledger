@@ -36,4 +36,9 @@ class Instructor extends Model
     {
         return $this->hasMany(InstructorLedgerEntry::class);
     }
+
+    public function payouts(): HasMany
+    {
+        return $this->hasMany(Payout::class);
+    }
 }

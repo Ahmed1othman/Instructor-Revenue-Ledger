@@ -25,6 +25,16 @@ final class Money
         return new self($this->amountMinor - $other->amountMinor, $this->currency);
     }
 
+    public static function formatMinor(int $amountMinor, string $currency): string
+    {
+        $sign = $amountMinor < 0 ? '-' : '';
+        $absolute = abs($amountMinor);
+        $major = intdiv($absolute, 100);
+        $minor = $absolute % 100;
+
+        return sprintf('%s%d.%02d %s', $sign, $major, $minor, $currency);
+    }
+
     private function assertSameCurrency(Money $other): void
     {
         if ($this->currency !== $other->currency) {

@@ -151,13 +151,13 @@ description: "Task list for Instructor Financial Core implementation"
 
 ### Tests for US3
 
-- [ ] T050 [US3] Create `tests/Feature/Filament/InstructorBalanceResourceTest.php` asserting list/view data and absence of write actions
+- [x] T050 [US3] Create `tests/Feature/Filament/InstructorBalanceResourceTest.php` asserting list/view data and absence of write actions
 
 ### Implementation for US3
 
-- [ ] T051 [US3] Create `app/Filament/Resources/InstructorBalanceResource.php` with list columns: instructor name, total earned, total paid, outstanding, currency
-- [ ] T052 [US3] Add view page and relation managers in `app/Filament/Resources/InstructorBalanceResource/` for payout history and optional ledger entries (read-only)
-- [ ] T053 [US3] Disable create/edit/delete actions in `app/Filament/Resources/InstructorBalanceResource.php`. Keep only index and view pages in `getPages()`. Do not register create/edit pages. Remove header actions, table actions, bulk actions, and any payout-trigger actions.
+- [x] T051 [US3] Create `app/Filament/Resources/InstructorBalanceResource.php` with list columns: instructor name, total earned, total paid, outstanding, currency
+- [x] T052 [US3] Add view page and relation managers in `app/Filament/Resources/InstructorBalanceResource/` for payout history and optional ledger entries (read-only)
+- [x] T053 [US3] Disable create/edit/delete actions in `app/Filament/Resources/InstructorBalanceResource.php`. Keep only index and view pages in `getPages()`. Do not register create/edit pages. Remove header actions, table actions, bulk actions, and any payout-trigger actions.
 
 **Checkpoint**: T050 passes; Filament displays seeded instructor financial data.
 
