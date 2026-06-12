@@ -10,6 +10,7 @@ use App\Models\Subscription;
 use Filament\Forms\Form;
 use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\ViewEntry;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -82,8 +83,28 @@ class SubscriptionResource extends Resource
                             ->placeholder('—'),
                     ])
                     ->columns(2),
+                Section::make('Payment lifecycle')
+                    ->schema([
+                        ViewEntry::make('payment_breakdown_visual')
+                            ->view('filament.infolists.subscription.payment-breakdown')
+                            ->state(fn (Subscription $record): SubscriptionFinancialSummary => self::summaryFor($record)),
+                    ]),
+                Section::make('Revenue split')
+                    ->schema([
+                        ViewEntry::make('revenue_split_visual')
+                            ->view('filament.infolists.subscription.revenue-split')
+                            ->state(fn (Subscription $record): SubscriptionFinancialSummary => self::summaryFor($record)),
+                    ]),
+                Section::make('Financial lifecycle')
+                    ->schema([
+                        ViewEntry::make('lifecycle_flow_visual')
+                            ->view('filament.infolists.subscription.lifecycle-flow')
+                            ->state(fn (Subscription $record): SubscriptionFinancialSummary => self::summaryFor($record)),
+                    ]),
                 Section::make('Financial Summary')
-                    ->schema(self::financialSummaryEntries()),
+                    ->description('Read-only numeric breakdown')
+                    ->schema(self::financialSummaryEntries())
+                    ->collapsed(),
             ]);
     }
 
@@ -113,12 +134,21 @@ class SubscriptionResource extends Resource
             TextEntry::make('financial_remaining_refundable')
                 ->label('Remaining refundable')
                 ->state(fn (Subscription $record): string => $money($record, 'remainingRefundableMinor')),
-            TextEntry::make('financial_platform_earned')
-                ->label('Platform earned')
-                ->state(fn (Subscription $record): string => $money($record, 'platformEarnedMinor')),
+            TextEntry::make('financial_platform_contractual_share')
+                ->label('Platform contractual share')
+                ->state(fn (Subscription $record): string => $money($record, 'platformContractualShareMinor')),
+            TextEntry::make('financial_instructor_pool')
+                ->label('Instructor pool (contractual)')
+                ->state(fn (Subscription $record): string => $money($record, 'instructorPoolMinor')),
             TextEntry::make('financial_instructor_allocated')
                 ->label('Instructor pool allocated')
                 ->state(fn (Subscription $record): string => $money($record, 'instructorPoolAllocatedMinor')),
+            TextEntry::make('financial_unallocated_instructor_pool')
+                ->label('Unallocated instructor pool')
+                ->state(fn (Subscription $record): string => $money($record, 'unallocatedInstructorPoolMinor')),
+            TextEntry::make('financial_total_platform_retained')
+                ->label('Total platform retained')
+                ->state(fn (Subscription $record): string => $money($record, 'totalPlatformRetainedMinor')),
             TextEntry::make('financial_instructor_paid')
                 ->label('Instructor paid')
                 ->state(fn (Subscription $record): string => $money($record, 'instructorPaidMinor')),

@@ -60,6 +60,9 @@ class AllocateRevenueForDayAction
             $period->update(['status' => SettlementPeriodStatus::Allocating]);
         });
 
+        // Subscription status (active, refunded, cancelled, etc.) is intentionally ignored.
+        // A refunded/cancelled subscription remains allocatable on any elapsed day within its
+        // access window — including the cancellation day once that calendar day has ended.
         $payments = Payment::query()
             ->with(['subscription.plan'])
             ->where('status', PaymentStatus::Succeeded)

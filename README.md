@@ -1,26 +1,29 @@
 # Instructor Revenue Ledger
 
-A Laravel 11 hiring-challenge project that models **subscription revenue recognition**, **engagement-weighted instructor allocation**, an **append-only financial ledger**, and **safe idempotent payouts** — with a read-only Filament admin for audit visibility.
+Financial core for a multi-instructor learning platform (Career 180 Hiring Quest). Students pay subscription fees upfront; revenue is recognized over the access period; instructor shares are allocated from engagement; payouts run through a queued, idempotent pipeline with an unreliable mock provider; standard unused-days refunds are supported; and Filament provides read-only financial visibility plus a controlled refund action.
 
 ## What this project is
 
-- A **financial core** for a multi-instructor learning platform
-- Monthly settlement and revenue allocation driven by `valid_watched_seconds`
-- Integer **minor-unit** money handling (no floats in business logic)
-- Append-only instructor ledger with balance projections
-- Payout batching with duplicate prevention via `active_snapshot_key`
-- Mock payout provider for demo; deterministic fake provider in tests
-- **Daily** revenue allocation (`revenue:allocate --date`) with cross-mode guards vs legacy monthly
-- Standard **unused-days refunds** (CLI + Filament **Refund Unused Days** action)
-- Read-only Filament: instructor balances, **subscription financial view**, and **financial dashboard**
+- **Subscription payments** recorded in integer minor units (MySQL source of truth)
+- **Daily revenue allocation** as the official earning path (`revenue:allocate --date`)
+- **Engagement-weighted** instructor pool split using `valid_watched_seconds` and Largest Remainder Method rounding
+- **Append-only instructor ledger** with balance projections (`earning_credit`, `payout_debit`)
+- **Safe monthly payouts** via Artisan command + Redis queue jobs, with duplicate prevention and timeout reconciliation
+- **Standard unused-days refunds** (CLI + Filament **Refund Unused Days**)
+- **Filament admin** (admin-only): instructor balances, subscription financial summary, financial dashboard widgets
+- **Student portal** placeholder at `/student` (out of scope — no financial screens)
+- Pest tests covering money math, idempotency, refunds, payouts, admin access, and dashboard widgets
 
 ## What this project is not
 
-- Not a full LMS (no course catalog UI, video player, or heartbeat tracking)
-- Not a student dashboard
-- Not a real payment gateway or payout provider integration
-- Not Laravel Sail — this project uses **custom Docker Compose**
-- Not event sourcing — MySQL is the financial source of truth
+- Not a full LMS (no course catalog, video player, or heartbeat tracking)
+- Not a student dashboard or enrollment portal (`/student` is a placeholder only; financial screens are **admin-only**)
+- Not a real payment gateway integration
+- Not a real payout provider integration
+- Not a tax / VAT module
+- Not multi-currency FX conversion
+- Not Laravel Sail — uses **custom Docker Compose**
+- Not event sourcing — balances are projections; ledger is append-only
 
 ## Tech stack
 
@@ -28,112 +31,152 @@ A Laravel 11 hiring-challenge project that models **subscription revenue recogni
 |-------|--------|
 | Framework | Laravel 11, PHP 8.3 |
 | Database | MySQL 8 (financial source of truth) |
-| Queue / cache | Redis (jobs and cache only — not authoritative for money) |
-| Admin UI | Filament v3 (read-only) |
-| Tests | Pest |
+| Queue / cache | Redis (jobs and cache only) |
+| Admin UI | Filament v3 (Livewire v3 under the hood) |
+| Tests | Pest 3 |
 | Containers | Custom Docker Compose (`app`, `nginx`, `mysql`, `redis`, `node`) |
 
-## Docker setup
+## Core financial concepts
+
+| Term | Meaning |
+|------|---------|
+| **Student paid amount** | Total succeeded payment for a subscription (cash received on day one) |
+| **Earned revenue** | Portion of payment recognized for elapsed access days (via daily or legacy monthly allocation) |
+| **Instructor pool** | Share of earned revenue for instructors (`earned × instructor_share_bps / 10000`) |
+| **Allocated amount** | Instructor pool split by engagement weights → `revenue_allocations` + `earning_credit` ledger entries |
+| **Paid amount** | Instructor cash paid out after **confirmed** provider success (`payout_debit`) |
+| **Outstanding amount** | Allocated earnings not yet paid (`total_earned − total_paid` on balance projection) |
+| **Unearned amount** | Payment not yet earned or refunded (`paid − earned − refunded`, floor 0) |
+| **Refunded amount** | Completed standard refund total for unused future days |
+| **Remaining refundable** | Preview of unused future days still refundable (0 after refund or after subscription ends) |
+| **Unallocated instructor pool** | Contractual instructor pool for elapsed days with no engagement allocation |
+| **Platform contractual share** | Platform share of earned revenue (`earned − instructor pool`) |
+| **Total platform retained** | `platform contractual share + unallocated instructor pool` |
+
+All stored amounts are **integer minor units**. Display formatting (e.g. `300.00 EGP`) is for UI only — no floats in business logic.
+
+## Main business assumptions
+
+1. **Upfront payment** — Students pay for monthly, 3-month, or annual plans; cash is received when payment succeeds.
+2. **Revenue over time** — Payment ≠ fully earned on day one; revenue is earned gradually over the subscription access period.
+3. **Daily allocation (official)** — `revenue:allocate --date=YYYY-MM-DD` allocates one **completed elapsed** calendar day.
+4. **Monthly allocation (legacy only)** — `revenue:allocate --month=YYYY-MM` retained for feature 001 backward compatibility; **must not** be mixed with daily allocation in the same calendar month.
+5. **Allocation ≠ payout frequency** — Allocation can run daily; payouts remain batch/monthly via `payouts:run`.
+6. **Elapsed days only** — Future unearned days are never allocated to instructors.
+7. **Standard refunds** — Apply only to **unused future days**; cancellation day counts as **used**; refund period starts the **next** calendar day.
+8. **Pre-refund allocation** — Before refund, all unallocated elapsed days through cancellation day (inclusive) are daily-allocated.
+9. **No instructor reversal (standard)** — Future unused days were never allocated, so standard refunds do not create `earning_reversal` or `clawback` entries.
+10. **Exceptional refunds (future)** — Chargebacks, goodwill on used days, disputes → append-only `earning_reversal` or `clawback` (documented, not implemented).
+11. **Payouts pay allocated outstanding only** — Provider success is the **only** event that moves outstanding → paid.
+12. **Timeout = unknown** — `pending_confirmation` payouts are reconciled later; no `payout_debit` until confirmed.
+
+## Architecture overview
+
+```
+Payment (cash) → Subscription active
+    → Daily allocation (elapsed day only)
+        → Revenue recognition + engagement split
+        → revenue_allocations (idempotent)
+        → earning_credit ledger entry (append-only)
+        → instructor balance projection (outstanding ↑)
+    → payouts:run (monthly batch)
+        → ProcessInstructorPayoutJob (Redis queue)
+        → MockPayoutProvider (success / failure / timeout)
+        → On confirmed success only: payout_debit → paid ↑, outstanding ↓
+    → Standard refund (optional)
+        → Ensure elapsed days allocated (daily)
+        → Refund unused future days only
+        → refunds record (no ledger reversal)
+```
+
+**Key safety mechanisms**
+
+| Mechanism | Role |
+|-----------|------|
+| **Append-only ledger** | Financial history is never updated or deleted |
+| **Balance projections** | `instructor_balances` derived from ledger; not source of truth |
+| **Idempotency keys** | Payments, allocations, ledger entries, refunds deduplicated |
+| **AllocationModeGuardService** | Blocks daily + monthly allocation in the same calendar month |
+| **`active_snapshot_key`** | MySQL unique nullable column prevents duplicate active payouts per balance snapshot |
+| **Provider outside transactions** | External payout calls never hold DB locks |
+| **`payouts:reconcile`** | Resolves `pending_confirmation` without re-sending payout |
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for deeper design notes.
+
+## Setup
 
 **Prerequisites:** Docker and Docker Compose.
 
 ```bash
 docker compose up -d --build
-```
-
-Services:
-
-| Service | Purpose | Host port |
-|---------|---------|-----------|
-| `nginx` | Web server | `8080` |
-| `app` | PHP / Artisan | — |
-| `mysql` | Database | `3307` |
-| `redis` | Queue & cache | `6380` |
-| `node` | Frontend assets | — |
-
-## Installation
-
-```bash
-docker compose up -d --build
+docker compose exec app git config --global --add safe.directory /var/www/html
 docker compose exec app composer install
-docker compose exec node npm install
-docker compose exec node npm run build
 cp .env.example .env
 docker compose exec app php artisan key:generate
 docker compose exec app php artisan migrate:fresh --seed
+docker compose exec node npm install
+docker compose exec node npm run build
 ```
 
-## Environment setup
+### Environment (inside Docker)
 
-Copy `.env.example` to `.env`. Key values (defaults work with Docker):
+| Variable | Value |
+|----------|-------|
+| `DB_HOST` | `mysql` |
+| `DB_DATABASE` | `instructor_ledger` |
+| `QUEUE_CONNECTION` | `redis` |
+| `CACHE_STORE` | `redis` |
+| `REDIS_HOST` | `redis` |
+| `REDIS_PORT` | `6379` (container network) |
+| `APP_URL` | `http://localhost:8080` |
 
-- `DB_HOST=mysql`, `DB_DATABASE=instructor_ledger`, `DB_USERNAME=instructor`, `DB_PASSWORD=secret`
-- `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`, `REDIS_HOST=redis`
-- `APP_URL=http://localhost:8080`
+**Note:** Host-exposed ports may differ (`nginx` → `8080`, MySQL → `3307`, Redis → `6380`). Inside the `app` container always use `mysql` and `redis:6379`.
 
-All `php artisan` and `composer` commands run inside the **app** container.
-
-## Migrations and seeders
+All `php artisan` and `composer` commands run inside the **app** container:
 
 ```bash
-docker compose exec app php artisan migrate:fresh --seed
+docker compose exec app php artisan ...
 ```
 
-Or seed demo data only:
+### Demo seed data
 
-```bash
-docker compose exec app php artisan db:seed --class=DemoFinancialCoreSeeder
-```
-
-### Demo scenario
-
-The seeder creates:
+`DemoFinancialCoreSeeder` creates:
 
 | Entity | Details |
 |--------|---------|
-| Admin | `admin@demo.local` / `password` (Filament login) |
+| Admin | `admin@demo.local` / `password` |
 | Student | `student@demo.local` / `password` |
-| Plan | **Monthly Pro** — 30,000 minor units (300.00 EGP), 30 days, 6000 bps instructor share (60%) |
-| Subscription | January 2026 (`2026-01-01` → `2026-01-30`) |
+| Plan | Monthly Pro — 30,000 minor (300.00 EGP), 60% instructor share |
+| Subscription | 2026-01-01 → 2026-01-30 |
 | Payment | 30,000 EGP succeeded |
-| Instructors | A (Laravel APIs), B (Livewire & Filament), C (Career Skills) |
-| Engagement | `valid_watched_seconds`: A=3600, B=1800, C=600 |
+| Instructors | A, B, C with `valid_watched_seconds` 3600 / 1800 / 600 |
 
-After allocation for January 2026, expected instructor earnings:
+After **legacy monthly** allocation for January 2026, expected instructor earnings: A=10,800, B=5,400, C=1,800 minor (pool 18,000). Official demos should use **daily** allocation instead.
 
-| Instructor | Minor units | Display |
-|------------|-------------|---------|
-| A | 10,800 | 108.00 EGP |
-| B | 5,400 | 54.00 EGP |
-| C | 1,800 | 18.00 EGP |
+### Rich demo seed (optional)
 
-Instructor pool = 18,000 minor (60% of 30,000). Platform retains 12,000 minor (40%).
+The default seed (`migrate:fresh --seed`) is **lightweight** — one student, one subscription, January 2026 dates, EGP currency. Use it for quick setup and tests.
 
-## Financial lifecycle rules (locked)
+For dashboard screenshots, video demos, and manual exploration, load the optional rich dataset:
 
-These rules define how cash, earning, allocation, payout, and refunds relate. Full detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-**Cash vs earned:** Students pay upfront (monthly, 3-month, or annual plans). Cash is received on day one, but revenue is **earned gradually** over the access period. Future unelapsed days are unearned.
-
-**Allocation vs payout:** Separate frequencies. **Daily allocation** (`--date`) is the official path for feature 002 demos and refunds. **Monthly allocation** (`--month`) remains for legacy compatibility and feature 001 tests. Payout stays **monthly** (`payouts:run`) even when allocation is daily.
-
-**Daily/monthly mutual exclusion:** Never allocate the same month twice — if a month has daily allocations, monthly allocation for that month is blocked, and vice versa.
-
-**Allocation scope:** Only **elapsed / completed** periods may be allocated. Never allocate future unearned days.
-
-**Earned ≠ paid:** Allocation writes `earning_credit` and increases outstanding. **Paid** changes only after **confirmed provider success** writes `payout_debit`. Payout must not run ahead of allocation; the target period must be fully allocated first.
-
-**Standard refunds:** Apply only to **unused future days**. The cancellation day counts as used; refund starts the next day. Before refunding, allocate all elapsed days through the cancellation day. Because future days were never allocated, standard refunds do **not** require instructor earning reversals.
-
-**Exceptional refunds (future):** Chargebacks, goodwill on used days, disputes — use append-only `earning_reversal` or `clawback` entries; never mutate old ledger rows.
-
-**Lifecycle flow:**
-
+```bash
+docker compose exec app php artisan migrate:fresh --seed
+docker compose exec app php artisan db:seed --class=RichFinancialDemoSeeder
 ```
-Pay upfront → subscription active → elapsed days earned
-→ allocate (daily or monthly, elapsed only) → earning_credit → outstanding up
-→ payout after period fully allocated → provider success → payout_debit → paid up
-→ standard refund: allocate through cancel day → refund future days only
+
+`RichFinancialDemoSeeder` adds:
+
+- Multiple students and instructors
+- Monthly, quarterly, and annual plans (EGP)
+- Subscriptions anchored around the **current real date** (recent months)
+- Active, expired, cancelled, and refunded subscriptions
+- At least one no-engagement subscription and one multi-instructor subscription
+- Enough consumption and payout variety for top-instructor widgets and pipeline stats
+
+After seeding, run daily allocation for any new elapsed days:
+
+```bash
+docker compose exec app php artisan revenue:allocate --date=YYYY-MM-DD
 ```
 
 ## Running tests
@@ -142,143 +185,174 @@ Pay upfront → subscription active → elapsed days earned
 docker compose exec app php artisan test
 ```
 
-Tests use `FakePayoutProvider` (deterministic). The demo app binds `MockPayoutProvider` (random outcomes) via `AppServiceProvider`.
+**Current result:** 54 tests passing, 186 assertions.
 
-## Revenue allocation
+Tests bind `FakePayoutProvider` (deterministic). The demo app uses `MockPayoutProvider` (random outcomes) via `AppServiceProvider`.
 
-**Official (daily)** — one completed elapsed calendar day:
+## Official daily allocation
+
+Allocates **one completed elapsed calendar day**:
 
 ```bash
 docker compose exec app php artisan revenue:allocate --date=2026-01-04
 ```
 
-Defaults to yesterday when `--date` is omitted. Idempotent per day.
+- Rejects today and future dates (day must be fully elapsed)
+- Defaults to **yesterday** when `--date` is omitted
+- Idempotent — rerunning the same date does not duplicate allocations or ledger entries
+- Engagement filtered to `DATE(consumed_at) = date`
+- `AllocationModeGuardService` blocks if monthly allocations exist for that month
 
-**Legacy (monthly)** — feature 001 backward compatibility only; do not mix with daily in the same month:
+## Legacy monthly allocation
+
+Backward compatibility from feature 001 — **not** the official demo path:
 
 ```bash
 docker compose exec app php artisan revenue:allocate --month=2026-01
 ```
 
-`AllocationModeGuardService` blocks daily/monthly overlap in the same calendar month.
+Do **not** run daily and monthly allocation for the same calendar month. `AllocationModeGuardService` enforces mutual exclusion in both directions.
 
-## Refunds
+## Refund flow
 
 **Filament (primary):** Finance → **Subscriptions** → view → **Refund Unused Days**
 
-**CLI (tests/demo):**
+- Uses **today** automatically as the cancellation date (no date picker)
+- Shows read-only preview: cancellation date, refund starts on, used/unused days, amount
+- Hidden when the subscription period has ended or no unused future days remain
+
+**CLI** (explicit cancellation date for deterministic tests / automation):
 
 ```bash
-docker compose exec app php artisan refunds:process {subscription_id} --cancel-date=2026-01-10
+docker compose exec app php artisan refunds:process 1 --cancel-date=2026-01-10
 ```
 
-Cancellation day counts as used; refund covers unused future days only. No instructor earning reversals for standard refunds.
+Rules:
 
-## Running payouts
+- Cancellation day counts as **used**; refund starts the **next** calendar day
+- System daily-allocates missing elapsed days first (through yesterday when cancelling today)
+- **Cancellation day:** counts as used for refund math; refund starts tomorrow; that day's engagement is allocatable **after the day closes** (even if the subscription is already marked refunded)
+- Refund amount is based on **subscription dates**, not prior allocation state
+- **Not allowed** after the subscription access period has fully ended
+- Creates `refunds` record; updates subscription status
+- **No** `earning_reversal` or `clawback` for standard refunds
+- Idempotent per `refund:{subscription_id}:{cancellation_date}`
 
-**Start a queue worker first** (separate terminal):
+### No-engagement days
 
-```bash
-docker compose exec app php artisan queue:work redis --tries=3
-```
+If an elapsed day has **zero** `valid_watched_seconds`, no instructor allocation or ledger credit is created. Earned revenue still accrues; the instructor pool for that day remains **unallocated instructor pool** retained by the platform (included in **total platform retained**).
 
-Then:
+## Payout flow
 
 ```bash
 docker compose exec app php artisan payouts:run
-```
-
-Or process all pending jobs once:
-
-```bash
 docker compose exec app php artisan queue:work redis --stop-when-empty --tries=3
 ```
 
-`payouts:run` dispatches jobs to Redis. Without a worker, payouts stay pending.
-
-## Payout reconciliation
-
-When the mock provider returns a timeout (outcome unknown):
+When the mock provider returns timeout (outcome unknown):
 
 ```bash
 docker compose exec app php artisan payouts:reconcile
 ```
 
-Resolves `pending_confirmation` payouts via status check — no duplicate provider send.
+| Step | Behavior |
+|------|----------|
+| `payouts:run` | Creates payout batch + payout rows for `outstanding_minor > 0`; dispatches jobs to Redis |
+| Queue worker | Runs `ProcessInstructorPayoutJob`; calls provider |
+| Provider **success** | One `payout_debit` ledger entry; `active_snapshot_key` cleared |
+| Provider **timeout** | `pending_confirmation` — no debit until reconcile confirms |
+| `payouts:reconcile` | Status check only — no duplicate provider send |
 
-## Full demo flow (feature 002 — daily allocation)
+`payouts:run` may log an **allocation completeness warning** if elapsed days in the prior month were not daily-allocated. Warning only — does not block payout.
 
-```bash
-docker compose exec app php artisan migrate:fresh --seed
-```
+## Filament admin
 
-Allocate each elapsed January day (official path; use days with consumption in the seeder):
+**URL:** http://localhost:8080/admin
 
-```bash
-docker compose exec app php artisan revenue:allocate --date=2026-01-04
-# Repeat for other elapsed days in January as needed (e.g. 01-05 … 01-30)
-```
+**Login:** `admin@demo.local` / `password` (requires `is_admin = true`)
 
-Refund and payout:
+Non-admin users (e.g. `student@demo.local`) cannot access `/admin` financial screens.
 
-```bash
-# Optional: refund via CLI
-docker compose exec app php artisan refunds:process 1 --cancel-date=2026-01-10
+| Screen | Location | Notes |
+|--------|----------|-------|
+| **Dashboard** | Home | Sections: **Revenue**, **Revenue Split**, **Payouts**, **Subscriptions**, **Tables** (top instructors, recent refunds/payouts) |
+| **Subscriptions** | Finance → Subscriptions | Per-subscription financial summary; **Refund Unused Days** on view |
+| **Instructor Balances** | Finance → Instructor Balances | Read-only earned / paid / outstanding; payout and ledger history |
 
-docker compose exec app php artisan payouts:run
-docker compose exec app php artisan queue:work redis --stop-when-empty --tries=3
-docker compose exec app php artisan test
-```
+Payout triggers are **not** exposed in Filament — payouts run via Artisan only.
 
-Open Filament: **http://localhost:8080/admin**
+## Suggested demo walkthrough
 
-Login: `admin@demo.local` / `password`
+1. **Reset and seed**
+   ```bash
+   docker compose exec app php artisan migrate:fresh --seed
+   ```
 
-| Area | Path |
-|------|------|
-| Dashboard | Financial overview widgets |
-| Subscriptions | Finance → Subscriptions → **Refund Unused Days** |
-| Instructor balances | Finance → Instructor Balances (read-only) |
+2. **Daily allocation** (official path — repeat for elapsed days as needed)
+   ```bash
+   docker compose exec app php artisan revenue:allocate --date=2026-01-04
+   ```
 
-**Legacy monthly demo** (feature 001 only — do not use in the same month as daily):
+3. **Open dashboard** — verify payment, earned, allocation, and instructor widgets
 
-```bash
-docker compose exec app php artisan revenue:allocate --month=2026-01
-```
+4. **Open Subscriptions** — inspect financial summary fields
 
-## Important financial guarantees
+5. **Refund** — **Refund Unused Days** (uses today in Filament) or CLI with `--cancel-date`
 
-- **Integer minor units** — all stored amounts are integers; display formatting only divides for strings
-- **Cash ≠ earned** — upfront payment does not mean same-day full earning; only elapsed access is allocatable
-- **Earned / allocated ≠ paid** — outstanding increases on allocation; paid increases only on provider success
-- **No future allocation** — instructor earnings only for completed elapsed periods
-- **No daily/monthly overlap** — mutual exclusion prevents double allocation in the same month
-- **Payout after allocation** — payout cutoffs require the target period to be fully allocated first
-- **Largest Remainder Method** — allocation rounding preserves exact pool sums
-- **Append-only ledger** — exceptional corrections are new entries (`earning_reversal`, `clawback`), not updates
-- **Standard refunds without reversals** — refund unused future days only; those days were never allocated
-- **Idempotency keys** — ledger entries and payments deduplicated by unique keys
-- **`active_snapshot_key`** — prevents duplicate active payouts for the same balance snapshot (MySQL unique index)
-- **Provider outside transactions** — external calls never hold DB locks
-- **Timeout = unknown** — no debit until status is confirmed
+6. **Payout**
+   ```bash
+   docker compose exec app php artisan payouts:run
+   docker compose exec app php artisan queue:work redis --stop-when-empty --tries=3
+   ```
 
-## Known limitations / out of scope
+7. **Inspect** Finance → Instructor Balances — earned, outstanding, payout history
 
-- Exceptional refunds, chargebacks, and clawbacks (append-only `earning_reversal` / `clawback` — documented, not implemented)
-- Real payment gateway or payout provider
-- Multi-currency conversion
-- Tax / VAT
-- Full LMS UI, student dashboard, video player, heartbeat tracking
-- Payout triggers from Filament (read-only audit view only)
-- Role-based authorization beyond basic Filament panel access
-- Automated daily allocation loop in seeder (run `--date` per day manually or via shell loop)
+8. **Reconcile** (if mock timeout occurred)
+   ```bash
+   docker compose exec app php artisan payouts:reconcile
+   ```
+
+9. **Run tests**
+   ```bash
+   docker compose exec app php artisan test
+   ```
+
+## Testing strategy
+
+| Area | Test files / coverage |
+|------|----------------------|
+| Daily allocation | `DailyAllocateRevenueTest` |
+| Legacy monthly allocation | `AllocateRevenueTest` |
+| Cross-mode guard | `AllocationModeGuardTest` |
+| Rounding (LRM) | `AllocationRoundingServiceTest` |
+| Revenue recognition | `RevenueRecognitionServiceTest` |
+| Refund calculation & cancellation day | `SubscriptionRefundTest` |
+| Pre-refund allocation, duplicate refund | `SubscriptionRefundTest` |
+| Ledger idempotency | `LedgerAndBalanceTest` |
+| Payout duplicate prevention | `PayoutCommandTest` |
+| Job retry safety | `PayoutJobRetryTest` |
+| Provider timeout / reconcile | `PayoutTimeoutReconcileTest` |
+| Filament instructor balances | `InstructorBalanceResourceTest` |
+| Filament subscriptions + refund action | `SubscriptionResourceTest` |
+| Dashboard widgets | `FinancialDashboardWidgetTest` |
+
+## Known limitations / future improvements
+
+- Real payment gateway integration (Stripe, etc.)
+- Real payout provider integration with webhooks
+- Exceptional refunds: chargebacks, goodwill on used days (`earning_reversal`, `clawback`)
+- Full student portal and LMS features
+- Tax / VAT withholding
+- Multi-currency FX
+- Advanced reporting and period-close workflows
+- Production-grade RBAC beyond basic Filament login
+- Automated multi-day allocation in seeder (run `--date` per day manually or via shell loop)
 
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — design decisions and interview notes
-- [docs/AI_USAGE.md](docs/AI_USAGE.md) — AI assistance disclosure
+- [docs/AI_USAGE.md](docs/AI_USAGE.md) — AI assistance disclosure (Career 180 requirement)
 - [specs/002-daily-allocation-refunds-admin/quickstart.md](specs/002-daily-allocation-refunds-admin/quickstart.md) — feature 002 validation checklist
-- [specs/001-instructor-financial-core/quickstart.md](specs/001-instructor-financial-core/quickstart.md) — feature 001 baseline
 
 ## License
 

@@ -4,15 +4,11 @@ namespace App\Filament\Resources\SubscriptionResource\Actions;
 
 use App\Domain\Money\Money;
 use App\Domain\Refunds\Actions\CreateSubscriptionRefundAction;
-use App\Domain\Revenue\Enums\PaymentStatus;
-use App\Domain\Revenue\Enums\SubscriptionStatus;
-use App\Domain\Revenue\Services\RefundCalculationService;
-use App\Models\Payment;
+use App\Domain\Revenue\Services\SubscriptionRefundEligibilityService;
 use App\Models\Refund;
 use App\Models\Subscription;
-use Carbon\Carbon;
 use Filament\Actions\Action;
-use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Placeholder;
 use Filament\Notifications\Notification;
 use InvalidArgumentException;
 
@@ -30,27 +26,38 @@ class RefundUnusedDaysAction extends Action
         $this->label('Refund Unused Days')
             ->icon('heroicon-o-arrow-uturn-left')
             ->color('warning')
-            ->form([
-                DatePicker::make('cancellation_date')
-                    ->label('Cancellation date')
-                    ->default(now()->toDateString())
-                    ->required()
-                    ->maxDate(fn (Subscription $record): string => $record->ends_at->toDateString())
-                    ->minDate(fn (Subscription $record): string => $record->starts_at->toDateString()),
-            ])
-            ->modalHeading('Refund Unused Days')
-            ->modalDescription(function (Subscription $record, array $data): string {
-                $preview = $this->previewAmount($record, $data['cancellation_date'] ?? now()->toDateString());
+            ->form(function (Subscription $record): array {
+                $preview = app(SubscriptionRefundEligibilityService::class)->standardRefundPreview($record);
 
-                return sprintf(
-                    'Standard refund for unused future days only. Cancellation day counts as used; refund starts the next day. Preview refund amount: %s.',
-                    $preview,
-                );
+                return [
+                    Placeholder::make('cancellation_date')
+                        ->label('Cancellation date')
+                        ->content($preview['cancellation_date']),
+                    Placeholder::make('refund_starts_on')
+                        ->label('Refund starts on')
+                        ->content($preview['refund_starts_on']),
+                    Placeholder::make('used_days')
+                        ->label('Used days')
+                        ->content((string) $preview['used_days']),
+                    Placeholder::make('unused_days')
+                        ->label('Unused days')
+                        ->content((string) $preview['unused_days']),
+                    Placeholder::make('refund_amount')
+                        ->label('Refund amount')
+                        ->content(Money::formatMinor($preview['amount_minor'], $record->currency)),
+                ];
             })
+            ->modalHeading('Refund Unused Days')
+            ->modalDescription(
+                'Standard refund uses today as the cancellation date. The cancellation day counts as used; refund starts the next calendar day.',
+            )
             ->requiresConfirmation()
-            ->visible(fn (Subscription $record): bool => $record->status !== SubscriptionStatus::Refunded)
-            ->action(function (Subscription $record, array $data): void {
-                $cancellationDate = Carbon::parse($data['cancellation_date'])->startOfDay();
+            ->visible(
+                fn (Subscription $record): bool => app(SubscriptionRefundEligibilityService::class)
+                    ->canOfferStandardRefund($record),
+            )
+            ->action(function (Subscription $record): void {
+                $cancellationDate = app(SubscriptionRefundEligibilityService::class)->standardCancellationDate();
                 $idempotencyKey = sprintf(
                     'refund:%d:%s',
                     $record->id,
@@ -93,25 +100,5 @@ class RefundUnusedDaysAction extends Action
                         ->send();
                 }
             });
-    }
-
-    private function previewAmount(Subscription $record, string $cancellationDate): string
-    {
-        $payment = Payment::query()
-            ->where('subscription_id', $record->id)
-            ->where('status', PaymentStatus::Succeeded)
-            ->first();
-
-        if ($payment === null) {
-            return Money::formatMinor(0, $record->currency);
-        }
-
-        $amountMinor = app(RefundCalculationService::class)->preview(
-            $payment,
-            $record,
-            Carbon::parse($cancellationDate)->startOfDay(),
-        );
-
-        return Money::formatMinor($amountMinor, $record->currency);
     }
 }

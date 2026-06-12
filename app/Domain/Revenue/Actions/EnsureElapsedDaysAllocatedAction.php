@@ -15,6 +15,16 @@ class EnsureElapsedDaysAllocatedAction
     {
         $start = $subscription->starts_at->copy()->startOfDay();
         $end = $cancellationDate->copy()->startOfDay();
+        $lastAllocatableDay = now()->startOfDay()->subDay();
+
+        if ($end->greaterThan($lastAllocatableDay)) {
+            $end = $lastAllocatableDay;
+        }
+
+        if ($end->lessThan($start)) {
+            return;
+        }
+
         $cursor = $start->copy();
 
         while ($cursor->lessThanOrEqualTo($end)) {

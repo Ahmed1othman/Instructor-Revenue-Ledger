@@ -2,11 +2,21 @@
 
 use App\Domain\Revenue\Actions\AllocateRevenueForDayAction;
 use App\Filament\Widgets\FinancialOverviewStats;
+use App\Filament\Widgets\InstructorPoolProgressWidget;
+use App\Filament\Widgets\MonthlyFinancialTrendChart;
+use App\Filament\Widgets\PayoutPipelineChart;
 use App\Filament\Widgets\PayoutPipelineStats;
+use App\Filament\Widgets\RecentFinancialActivityWidget;
+use App\Filament\Widgets\RecentRefundsWidget;
+use App\Filament\Widgets\RevenueCompositionChart;
+use App\Filament\Widgets\RevenuePaymentProgressWidget;
+use App\Filament\Widgets\RevenueSplitChart;
 use App\Filament\Widgets\RevenueSplitStats;
+use App\Filament\Widgets\SubscriptionStatusChart;
 use App\Filament\Widgets\SubscriptionStatusStats;
 use App\Filament\Widgets\TopInstructorsByEarned;
 use App\Filament\Widgets\TopInstructorsByOutstanding;
+use App\Filament\Widgets\TopSubscriptionsByPaymentWidget;
 use App\Models\Course;
 use App\Models\Instructor;
 use App\Models\LessonConsumption;
@@ -69,11 +79,13 @@ it('shows platform payment and allocation totals on financial overview widgets',
     seedDashboardFinancialData();
 
     Livewire::test(FinancialOverviewStats::class)
-        ->assertSee('Total payments')
-        ->assertSee('300.00');
+        ->assertSee('Total student payments')
+        ->assertSee('300.00 USD');
 
     Livewire::test(RevenueSplitStats::class)
         ->assertSee('Instructor allocated')
+        ->assertSee('Unallocated instructor pool')
+        ->assertSee('Total platform retained')
         ->assertSee('6.00');
 });
 
@@ -81,11 +93,12 @@ it('shows subscription and payout pipeline counts on dashboard widgets', functio
     seedDashboardFinancialData();
 
     Livewire::test(SubscriptionStatusStats::class)
-        ->assertSee('Active subscriptions')
+        ->assertSee('Active')
         ->assertSee('1');
 
     Livewire::test(PayoutPipelineStats::class)
         ->assertSee('Pending payouts')
+        ->assertSee('Instructor outstanding')
         ->assertSee('0');
 });
 
@@ -99,4 +112,30 @@ it('lists top instructors by earned and outstanding on table widgets', function 
     Livewire::test(TopInstructorsByOutstanding::class)
         ->assertSee($instructor->name)
         ->assertSee('6.00');
+});
+
+it('renders recent refunds table widget', function (): void {
+    seedDashboardFinancialData();
+
+    Livewire::test(RecentRefundsWidget::class)
+        ->assertSee('Recent refunds');
+});
+
+it('renders dashboard chart and progress widgets without error', function (): void {
+    seedDashboardFinancialData();
+
+    Livewire::test(RevenueCompositionChart::class)->assertSuccessful();
+    Livewire::test(RevenuePaymentProgressWidget::class)
+        ->assertSee('Payment utilization')
+        ->assertSee('Earned');
+    Livewire::test(RevenueSplitChart::class)->assertSuccessful();
+    Livewire::test(InstructorPoolProgressWidget::class)
+        ->assertSee('Instructor pool utilization');
+    Livewire::test(PayoutPipelineChart::class)->assertSuccessful();
+    Livewire::test(SubscriptionStatusChart::class)->assertSuccessful();
+    Livewire::test(MonthlyFinancialTrendChart::class)->assertSuccessful();
+    Livewire::test(TopSubscriptionsByPaymentWidget::class)
+        ->assertSee('Top subscriptions by payment');
+    Livewire::test(RecentFinancialActivityWidget::class)
+        ->assertSee('Recent financial activity');
 });

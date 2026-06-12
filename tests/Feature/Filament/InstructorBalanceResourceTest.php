@@ -14,7 +14,7 @@ uses(SeedsInstructorBalances::class);
 
 function authenticateFilamentUser(): User
 {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
 
     test()->actingAs($user);
 

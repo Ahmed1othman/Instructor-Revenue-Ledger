@@ -10,7 +10,7 @@ use Filament\Widgets\TableWidget as BaseWidget;
 
 class TopInstructorsByOutstanding extends BaseWidget
 {
-    protected static ?int $sort = 6;
+    protected static ?int $sort = 52;
 
     protected int|string|array $columnSpan = 'full';
 

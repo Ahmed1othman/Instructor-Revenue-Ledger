@@ -7,6 +7,7 @@ use App\Domain\Revenue\Enums\PaymentStatus;
 use App\Domain\Revenue\Enums\RefundStatus;
 use App\Domain\Revenue\Enums\SubscriptionStatus;
 use App\Domain\Revenue\Services\RefundCalculationService;
+use App\Domain\Revenue\Services\SubscriptionRefundEligibilityService;
 use App\Models\Payment;
 use App\Models\Refund;
 use App\Models\Subscription;
@@ -19,6 +20,7 @@ class CreateSubscriptionRefundAction
     public function __construct(
         private readonly EnsureElapsedDaysAllocatedAction $ensureElapsedDaysAllocated,
         private readonly RefundCalculationService $refundCalculation,
+        private readonly SubscriptionRefundEligibilityService $refundEligibility,
     ) {}
 
     public function execute(Subscription $subscription, Carbon $cancellationDate): Refund
@@ -60,6 +62,8 @@ class CreateSubscriptionRefundAction
                 sprintf('No succeeded payment found for subscription %d.', $subscription->id),
             );
         }
+
+        $this->refundEligibility->validateRefundRequest($subscription, $cancellationDay);
 
         $this->ensureElapsedDaysAllocated->execute($subscription, $cancellationDay);
 

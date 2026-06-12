@@ -94,8 +94,10 @@ Standard refunds apply only to **unused future days**.
 
 **Before calculating a standard refund:**
 
-1. Allocate all **unallocated elapsed days** up to and including the cancellation day.
-2. This ensures instructor engagement on the cancellation day is counted before any refund.
+1. Allocate all **unallocated allocatable elapsed days** through the cancellation day (when cancelling **today**, only days through **yesterday** are allocatable — the current calendar day cannot be allocated until it ends).
+2. This ensures instructor engagement on completed elapsed days is counted before any refund.
+
+**Cancellation-day allocation after refund:** if cancellation happens today, today counts as **used** for refund math (refund starts tomorrow) but is **not** allocated until the calendar day completes. After day close, `revenue:allocate --date=` for that cancellation date still works even when the subscription is already marked `refunded` — daily allocation keys off the subscription access window, not status. No `earning_reversal` or `clawback` is created for standard refunds.
 
 **Why standard refunds need no earning reversals:**
 
@@ -188,32 +190,41 @@ Calendar-month settlement retained for feature 001 tests and backward compatibil
 `CreateSubscriptionRefundAction` orchestrates:
 
 1. Idempotency check (`refund:{subscription_id}:{cancellation_date}`)
-2. `EnsureElapsedDaysAllocatedAction` — daily allocation only through cancellation day inclusive
-3. `RefundCalculationService` — unused future days amount (integer minor units)
-4. Persist `refunds` row; update subscription status — **no ledger reversals**
+2. `SubscriptionRefundEligibilityService` — rejects ended subscriptions and zero unused-day refunds
+3. `EnsureElapsedDaysAllocatedAction` — daily allocation through allocatable elapsed days
+4. `RefundCalculationService` — unused future days amount from **subscription dates** (integer minor units)
+5. Persist `refunds` row; update subscription status — **no ledger reversals**
 
-Filament entry point: **Refund Unused Days** on subscription view (`SubscriptionResource`).
+**Filament:** **Refund Unused Days** uses **today** as cancellation date (read-only preview modal; no date picker). Hidden when the subscription has ended or no refundable days remain.
+
+**CLI:** `refunds:process {subscription} --cancel-date=` accepts an explicit date for deterministic tests.
 
 ## Subscription financial summary
 
 `SubscriptionFinancialSummaryService` computes per-subscription metrics from MySQL:
 
-- Paid, earned, unearned, refunded, remaining refundable
-- Platform earned, instructor pool allocated, instructor paid, instructor outstanding
+- Paid, earned, unearned, refunded, remaining refundable (0 after subscription ends)
+- Platform contractual share, instructor pool (contractual), instructor allocated, **unallocated instructor pool**, **total platform retained**
+- Instructor paid, instructor outstanding
+
+Earned revenue is computed from **elapsed subscription days** (recognition), not from whether allocation rows already exist.
 
 Displayed on **Finance → Subscriptions** (read-only list/view).
 
 ## Filament financial dashboard
 
-DB-backed widgets (no Redis cache for money totals):
+DB-backed widgets grouped into business sections (no Redis cache for money totals):
 
-| Widget | Metrics |
-|--------|---------|
-| FinancialOverviewStats | payments, earned, unearned, refunds, remaining refundable |
-| RevenueSplitStats | platform earned, instructor allocated/paid/outstanding |
-| PayoutPipelineStats | pending, pending_confirmation, failed payout counts |
-| SubscriptionStatusStats | active vs cancelled/refunded |
-| TopInstructorsByEarned / TopInstructorsByOutstanding | top 5 tables |
+| Section | Widget | Metrics |
+|---------|--------|---------|
+| Revenue | FinancialOverviewStats | total student payments, earned, unearned liability, refunds, remaining refundable |
+| Revenue Split | RevenueSplitStats | platform contractual share, instructor pool, allocated, unallocated pool, total platform retained |
+| Payouts | PayoutPipelineStats | instructor paid/outstanding, pending, pending confirmation, failed |
+| Subscriptions | SubscriptionStatusStats | active, expired, cancelled, refunded counts |
+| Tables | TopInstructorsByEarned / TopInstructorsByOutstanding | top 5 by earned / outstanding |
+| Tables | RecentRefundsWidget / RecentPayoutsWidget | latest refund and payout rows |
+
+Money stat widgets resolve currency from succeeded payments: a single currency (e.g. EGP in demo seed) is shown on all amounts; multiple currencies show amounts without a misleading code plus a **mixed currencies — not FX-converted** description.
 
 ## Engagement weighting: `valid_watched_seconds`
 
@@ -227,7 +238,7 @@ Demo weights:
 | B | 1800 | 30% |
 | C | 600 | 10% |
 
-**No engagement → no allocation** for that instructor in that period.
+**No engagement → no allocation** for that day: no fake allocation, no `earning_credit`, outstanding does not increase. The contractual instructor pool for that elapsed day becomes **unallocated instructor pool** retained by the platform (included in **total platform retained**). Earned revenue still accrues over time.
 
 ## Instructor pool after platform cut
 
@@ -368,6 +379,8 @@ Pragmatic middle ground: audit trail + fast reads without event-sourcing complex
 
 The challenge targets **financial correctness under concurrency and idempotency**, not UX for students. Lesson consumptions are seeded data representing engagement that would come from a future video/heartbeat pipeline.
 
+`/student` shows a placeholder message only. Financial screens (dashboard, subscriptions, instructor balances, refunds) require `users.is_admin = true` and are served from `/admin`.
+
 ## Filament admin
 
 Read-only `InstructorBalanceResource`:
@@ -402,6 +415,7 @@ docker compose exec app php artisan refunds:process 1 --cancel-date=2026-01-10
 docker compose exec app php artisan payouts:run
 docker compose exec app php artisan queue:work redis --tries=3
 docker compose exec app php artisan payouts:reconcile
+docker compose exec app php artisan db:seed --class=RichFinancialDemoSeeder   # optional rich demo data
 ```
 
 ## Related docs

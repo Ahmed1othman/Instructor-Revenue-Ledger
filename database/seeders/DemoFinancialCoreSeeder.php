@@ -30,6 +30,7 @@ class DemoFinancialCoreSeeder extends Seeder
                 'name' => 'Admin User',
                 'password' => Hash::make(self::DEMO_PASSWORD),
                 'email_verified_at' => now(),
+                'is_admin' => true,
             ],
         );
 
@@ -39,6 +40,7 @@ class DemoFinancialCoreSeeder extends Seeder
                 'name' => 'Student User',
                 'password' => Hash::make(self::DEMO_PASSWORD),
                 'email_verified_at' => now(),
+                'is_admin' => false,
             ],
         );
 

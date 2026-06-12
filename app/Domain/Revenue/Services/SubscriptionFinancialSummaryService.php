@@ -18,7 +18,7 @@ class SubscriptionFinancialSummaryService
 {
     public function __construct(
         private readonly RevenueRecognitionService $recognitionService,
-        private readonly RefundCalculationService $refundCalculation,
+        private readonly SubscriptionRefundEligibilityService $refundEligibility,
     ) {}
 
     public function forSubscription(Subscription $subscription): SubscriptionFinancialSummary
@@ -49,11 +49,17 @@ class SubscriptionFinancialSummaryService
 
         $remainingRefundableMinor = $this->remainingRefundableMinor($subscription, $payment);
 
+        $instructorPoolMinor = $payment !== null
+            ? $this->contractualInstructorPoolMinor($subscription, $payment)
+            : 0;
+
         $instructorPoolAllocatedMinor = (int) RevenueAllocation::query()
             ->where('subscription_id', $subscription->id)
             ->sum('allocated_amount_minor');
 
-        $platformEarnedMinor = max(0, $earnedMinor - $instructorPoolAllocatedMinor);
+        $unallocatedInstructorPoolMinor = max(0, $instructorPoolMinor - $instructorPoolAllocatedMinor);
+        $platformContractualShareMinor = max(0, $earnedMinor - $instructorPoolMinor);
+        $totalPlatformRetainedMinor = $platformContractualShareMinor + $unallocatedInstructorPoolMinor;
 
         $instructorIds = RevenueAllocation::query()
             ->where('subscription_id', $subscription->id)
@@ -80,8 +86,11 @@ class SubscriptionFinancialSummaryService
             unearnedMinor: $unearnedMinor,
             refundedMinor: $refundedMinor,
             remainingRefundableMinor: $remainingRefundableMinor,
-            platformEarnedMinor: $platformEarnedMinor,
+            platformContractualShareMinor: $platformContractualShareMinor,
+            instructorPoolMinor: $instructorPoolMinor,
             instructorPoolAllocatedMinor: $instructorPoolAllocatedMinor,
+            unallocatedInstructorPoolMinor: $unallocatedInstructorPoolMinor,
+            totalPlatformRetainedMinor: $totalPlatformRetainedMinor,
             instructorPaidMinor: $instructorPaidMinor,
             instructorOutstandingMinor: $instructorOutstandingMinor,
             currency: $currency,
@@ -90,20 +99,22 @@ class SubscriptionFinancialSummaryService
 
     private function recognizedEarnedMinor(Subscription $subscription, Payment $payment): int
     {
+        $recognitionEnd = $this->elapsedRecognitionEnd($subscription);
+
+        if ($recognitionEnd === null) {
+            return 0;
+        }
+
         $earnedMinor = 0;
+        $cursor = $subscription->starts_at->copy()->startOfDay();
 
-        $dailyDates = RevenueAllocation::query()
-            ->where('subscription_id', $subscription->id)
-            ->whereNotNull('allocation_date')
-            ->distinct()
-            ->pluck('allocation_date');
-
-        foreach ($dailyDates as $date) {
+        while ($cursor->lessThanOrEqualTo($recognitionEnd)) {
             $earnedMinor += $this->recognitionService->earnedAmountMinorForDay(
                 $payment,
                 $subscription,
-                Carbon::parse($date)->startOfDay(),
+                $cursor,
             );
+            $cursor->addDay();
         }
 
         $monthlyPeriodIds = RevenueAllocation::query()
@@ -127,22 +138,74 @@ class SubscriptionFinancialSummaryService
         return $earnedMinor;
     }
 
+    private function contractualInstructorPoolMinor(Subscription $subscription, Payment $payment): int
+    {
+        $recognitionEnd = $this->elapsedRecognitionEnd($subscription);
+
+        if ($recognitionEnd === null) {
+            return 0;
+        }
+
+        $instructorShareBps = (int) $subscription->plan->instructor_share_bps;
+        $poolMinor = 0;
+        $cursor = $subscription->starts_at->copy()->startOfDay();
+
+        while ($cursor->lessThanOrEqualTo($recognitionEnd)) {
+            $dayEarned = $this->recognitionService->earnedAmountMinorForDay(
+                $payment,
+                $subscription,
+                $cursor,
+            );
+            $poolMinor += $this->recognitionService->instructorPoolMinor($dayEarned, $instructorShareBps);
+            $cursor->addDay();
+        }
+
+        return $poolMinor;
+    }
+
+    private function elapsedRecognitionEnd(Subscription $subscription): ?Carbon
+    {
+        $start = $subscription->starts_at->copy()->startOfDay();
+        $end = $subscription->ends_at->copy()->startOfDay();
+
+        if ($subscription->status === SubscriptionStatus::Refunded && $subscription->cancelled_at !== null) {
+            $cancelled = Carbon::parse($subscription->cancelled_at)->startOfDay();
+
+            return $cancelled->lessThan($start) ? null : $cancelled;
+        }
+
+        $today = now()->startOfDay();
+
+        if ($today->lessThan($start)) {
+            return null;
+        }
+
+        $recognitionEnd = $today->greaterThan($end) ? $end : $today->copy()->subDay();
+
+        if ($recognitionEnd->lessThan($start)) {
+            return null;
+        }
+
+        return $recognitionEnd;
+    }
+
     private function remainingRefundableMinor(Subscription $subscription, ?Payment $payment): int
     {
         if ($payment === null || $subscription->status === SubscriptionStatus::Refunded) {
             return 0;
         }
 
-        $today = now()->startOfDay();
-        $subscriptionStart = $subscription->starts_at->copy()->startOfDay();
-        $subscriptionEnd = $subscription->ends_at->copy()->startOfDay();
-
-        if ($today->lessThan($subscriptionStart)) {
+        if ($this->refundEligibility->subscriptionPeriodHasEnded($subscription)) {
             return 0;
         }
 
-        $cancellationDate = $today->greaterThan($subscriptionEnd) ? $subscriptionEnd : $today;
+        if (now()->startOfDay()->lessThan($subscription->starts_at->copy()->startOfDay())) {
+            return 0;
+        }
 
-        return $this->refundCalculation->preview($payment, $subscription, $cancellationDate);
+        return $this->refundEligibility->previewRefundAmountMinor(
+            $subscription,
+            $this->refundEligibility->standardCancellationDate(),
+        );
     }
 }

@@ -17,7 +17,7 @@ use App\Models\User;
 use Carbon\Carbon;
 
 beforeEach(function (): void {
-    Carbon::setTestNow('2026-02-01 12:00:00');
+    Carbon::setTestNow('2026-01-11 12:00:00');
 });
 
 afterEach(function (): void {
@@ -137,6 +137,104 @@ it('returns the existing refund when the same cancellation date is processed twi
     expect($second->id)->toBe($first->id);
     expect(Refund::query()->count())->toBe(1);
     expect(InstructorLedgerEntry::query()->count())->toBe($ledgerCountAfterFirst);
+});
+
+it('scenario A allocates elapsed days with no prior allocations then refunds only future days', function (): void {
+    ['subscription' => $subscription] = createJanuaryRefundScenario();
+
+    expect(RevenueAllocation::query()->count())->toBe(0);
+
+    $refund = app(CreateSubscriptionRefundAction::class)->execute(
+        $subscription,
+        Carbon::parse('2026-01-10'),
+    );
+
+    expect(RevenueAllocation::query()->count())->toBe(10);
+    expect($refund->amount_minor)->toBe(20000);
+    expect($refund->unused_days)->toBe(20);
+});
+
+it('rejects refunds after the subscription access period has fully ended', function (): void {
+    Carbon::setTestNow('2026-02-01 12:00:00');
+
+    ['subscription' => $subscription] = createJanuaryRefundScenario();
+
+    expect(fn () => app(CreateSubscriptionRefundAction::class)->execute(
+        $subscription,
+        Carbon::parse('2026-01-10'),
+    ))->toThrow(\InvalidArgumentException::class, 'fully ended');
+});
+
+it('refunds today excluding today from refundable amount and allocates cancellation day after day close', function (): void {
+    Carbon::setTestNow('2026-01-10 14:00:00');
+
+    $student = User::factory()->create();
+    $plan = Plan::factory()->create([
+        'price_minor' => 30000,
+        'instructor_share_bps' => 6000,
+        'duration_days' => 30,
+    ]);
+
+    $subscription = Subscription::factory()->create([
+        'user_id' => $student->id,
+        'plan_id' => $plan->id,
+        'starts_at' => '2026-01-01 00:00:00',
+        'ends_at' => '2026-01-30 23:59:59',
+        'currency' => 'USD',
+    ]);
+
+    Payment::factory()->create([
+        'subscription_id' => $subscription->id,
+        'amount_minor' => 30000,
+        'currency' => 'USD',
+    ]);
+
+    $instructor = Instructor::factory()->create();
+    $course = Course::factory()->create(['instructor_id' => $instructor->id]);
+
+    LessonConsumption::factory()->create([
+        'subscription_id' => $subscription->id,
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'instructor_id' => $instructor->id,
+        'valid_watched_seconds' => 3600,
+        'consumed_at' => '2026-01-10 10:00:00',
+    ]);
+
+    $refund = app(CreateSubscriptionRefundAction::class)->execute(
+        $subscription,
+        Carbon::parse('2026-01-10'),
+    );
+
+    expect($refund->used_days)->toBe(10);
+    expect($refund->unused_days)->toBe(20);
+    expect($refund->refund_starts_on->toDateString())->toBe('2026-01-11');
+    expect($refund->amount_minor)->toBe(20000);
+    expect(
+        RevenueAllocation::query()
+            ->where('subscription_id', $subscription->id)
+            ->where('allocation_date', '2026-01-10')
+            ->exists(),
+    )->toBeFalse();
+
+    $subscription->refresh();
+    expect($subscription->status)->toBe(SubscriptionStatus::Refunded);
+    expect($subscription->cancelled_at->toDateString())->toBe('2026-01-10');
+
+    Carbon::setTestNow('2026-01-11 08:00:00');
+
+    app(AllocateRevenueForDayAction::class)->execute(Carbon::parse('2026-01-10'));
+
+    expect(
+        RevenueAllocation::query()
+            ->where('subscription_id', $subscription->id)
+            ->where('allocation_date', '2026-01-10')
+            ->where('instructor_id', $instructor->id)
+            ->exists(),
+    )->toBeTrue();
+    expect(InstructorLedgerEntry::query()->where('type', LedgerEntryType::EarningCredit)->count())->toBe(1);
+    expect(InstructorLedgerEntry::query()->where('type', 'earning_reversal')->count())->toBe(0);
+    expect(InstructorLedgerEntry::query()->where('type', 'clawback')->count())->toBe(0);
 });
 
 it('marks the subscription as refunded with cancellation metadata', function (): void {
